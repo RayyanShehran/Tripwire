@@ -1,0 +1,242 @@
+import type { GridLine, GridNode } from "./types";
+
+export const initialNodes: GridNode[] = [
+  {
+    id: "gen-north",
+    type: "generator",
+    position: { x: 80, y: 90 },
+    data: {
+      name: "North Ridge Gen",
+      type: "Generator",
+      generationMw: 420,
+      voltageKv: 230,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "bus-a",
+    type: "bus",
+    position: { x: 320, y: 80 },
+    data: {
+      name: "Bus A",
+      type: "Substation / Bus",
+      voltageKv: 230,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "bus-b",
+    type: "bus",
+    position: { x: 560, y: 95 },
+    data: {
+      name: "Bus B",
+      type: "Substation / Bus",
+      voltageKv: 230,
+      status: "Stressed",
+    },
+  },
+  {
+    id: "load-east",
+    type: "load",
+    position: { x: 820, y: 90 },
+    data: {
+      name: "East Industrial Load",
+      type: "Load",
+      loadMw: 250,
+      voltageKv: 138,
+      status: "Stressed",
+    },
+  },
+  {
+    id: "gen-south",
+    type: "generator",
+    position: { x: 120, y: 360 },
+    data: {
+      name: "South Thermal Gen",
+      type: "Generator",
+      generationMw: 315,
+      voltageKv: 230,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "bus-c",
+    type: "bus",
+    position: { x: 360, y: 320 },
+    data: {
+      name: "Bus C",
+      type: "Substation / Bus",
+      voltageKv: 230,
+      status: "Overloaded",
+    },
+  },
+  {
+    id: "bus-d",
+    type: "bus",
+    position: { x: 590, y: 340 },
+    data: {
+      name: "Bus D",
+      type: "Substation / Bus",
+      voltageKv: 138,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "load-city",
+    type: "load",
+    position: { x: 850, y: 325 },
+    data: {
+      name: "Metro Load",
+      type: "Load",
+      loadMw: 340,
+      voltageKv: 138,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "bus-e",
+    type: "bus",
+    position: { x: 520, y: 570 },
+    data: {
+      name: "Bus E",
+      type: "Substation / Bus",
+      voltageKv: 69,
+      status: "Failed",
+    },
+  },
+  {
+    id: "load-west",
+    type: "load",
+    position: { x: 210, y: 585 },
+    data: {
+      name: "West Residential Load",
+      type: "Load",
+      loadMw: 180,
+      voltageKv: 69,
+      status: "Failed",
+    },
+  },
+];
+
+export const initialEdges: GridLine[] = [
+  {
+    id: "line-1",
+    type: "transmissionLine",
+    source: "gen-north",
+    target: "bus-a",
+    data: {
+      name: "L-101",
+      loadingPercent: 62,
+      capacityMw: 500,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "line-2",
+    type: "transmissionLine",
+    source: "bus-a",
+    target: "bus-b",
+    data: {
+      name: "L-102",
+      loadingPercent: 83,
+      capacityMw: 450,
+      status: "Stressed",
+    },
+  },
+  {
+    id: "line-3",
+    type: "transmissionLine",
+    source: "bus-b",
+    target: "load-east",
+    data: {
+      name: "L-103",
+      loadingPercent: 88,
+      capacityMw: 300,
+      status: "Stressed",
+    },
+  },
+  {
+    id: "line-4",
+    type: "transmissionLine",
+    source: "gen-south",
+    target: "bus-c",
+    data: {
+      name: "L-201",
+      loadingPercent: 71,
+      capacityMw: 400,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "line-5",
+    type: "transmissionLine",
+    source: "bus-c",
+    target: "bus-d",
+    data: {
+      name: "L-202",
+      loadingPercent: 113,
+      capacityMw: 280,
+      status: "Overloaded",
+    },
+  },
+  {
+    id: "line-6",
+    type: "transmissionLine",
+    source: "bus-d",
+    target: "load-city",
+    data: {
+      name: "L-203",
+      loadingPercent: 58,
+      capacityMw: 350,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "line-7",
+    type: "transmissionLine",
+    source: "bus-a",
+    target: "bus-c",
+    data: {
+      name: "Tie-301",
+      loadingPercent: 79,
+      capacityMw: 320,
+      status: "Healthy",
+    },
+  },
+  {
+    id: "line-8",
+    type: "transmissionLine",
+    source: "bus-b",
+    target: "bus-d",
+    data: {
+      name: "Tie-302",
+      loadingPercent: 96,
+      capacityMw: 300,
+      status: "Stressed",
+    },
+  },
+  {
+    id: "line-9",
+    type: "transmissionLine",
+    source: "bus-c",
+    target: "bus-e",
+    data: {
+      name: "L-401",
+      loadingPercent: 0,
+      capacityMw: 220,
+      status: "Failed",
+    },
+  },
+  {
+    id: "line-10",
+    type: "transmissionLine",
+    source: "bus-e",
+    target: "load-west",
+    data: {
+      name: "L-402",
+      loadingPercent: 0,
+      capacityMw: 200,
+      status: "Failed",
+    },
+  },
+];
