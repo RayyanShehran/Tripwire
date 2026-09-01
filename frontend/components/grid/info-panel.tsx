@@ -18,7 +18,7 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
         <h2 className="text-lg font-semibold text-neutral-950">Selection</h2>
         <p className="mt-3 text-sm leading-6 text-neutral-600">
           Select a generator, bus, load, or transmission line to inspect its
-          current mock operating state.
+          current solved operating state.
         </p>
       </aside>
     );
@@ -38,7 +38,7 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
         <dl className="mt-5">
           <Row label="Type" value={node.data.type} />
           <Row label="Status" value={node.data.status} />
-          <Row label="Voltage" value={`${node.data.voltageKv} kV`} />
+          <Row label="Voltage" value={`${node.data.voltageKv} p.u.`} />
           {node.data.generationMw !== undefined ? (
             <Row label="Generation" value={`${node.data.generationMw} MW`} />
           ) : null}

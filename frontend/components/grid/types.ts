@@ -10,6 +10,7 @@ export type GridNodeData = {
   generationMw?: number;
   loadMw?: number;
   voltageKv: number;
+  connectedBusId?: string;
 };
 
 export type GridLineData = {

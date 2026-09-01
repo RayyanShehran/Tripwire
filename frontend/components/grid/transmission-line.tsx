@@ -48,7 +48,7 @@ export function TransmissionLine({
           strokeDasharray: status === "Failed" ? "8 6" : undefined,
         }}
       />
-      {data ? (
+      {data && data.capacityMw > 0 ? (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan pointer-events-none absolute rounded border border-neutral-200 bg-white px-2 py-1 text-[10px] font-semibold text-neutral-700 shadow-sm"
