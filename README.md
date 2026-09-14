@@ -2,9 +2,9 @@
 
 Tripwire is a web-based power-grid cascading failure simulation and decision-support platform.
 
-This repository currently contains the first working local version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, and a Next.js frontend that renders that network with React Flow.
+This repository currently contains the first working local version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, a deterministic cascading-failure engine, and a Next.js frontend that renders the network with React Flow.
 
-Cascading-failure simulation, machine-learning prediction, and mitigation recommendation features are intentionally not implemented yet.
+Machine-learning prediction, mitigation recommendation features, and cascade timeline playback are intentionally not implemented yet.
 
 ## Project Structure
 
@@ -19,8 +19,8 @@ tripwire/
 
 Tripwire is split into a browser frontend and a Python API backend.
 
-- The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, and basic single-component failure controls.
-- The backend exposes API endpoints for health checks, the solved grid state, one-off component failure simulation, and scenario reset.
+- The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, single-component failure controls, and a final-state cascade action.
+- The backend exposes API endpoints for health checks, the solved grid state, one-off component failure simulation, deterministic cascade simulation, and scenario reset.
 - The frontend communicates with the backend through the `NEXT_PUBLIC_API_BASE_URL` environment variable.
 
 Current backend libraries:
@@ -54,6 +54,7 @@ Status thresholds:
 GET /health
 GET /api/grid
 POST /api/failure
+POST /api/cascade
 POST /api/reset
 ```
 
@@ -127,6 +128,17 @@ Reset the scenario:
 Invoke-RestMethod http://127.0.0.1:8000/api/reset -Method Post
 ```
 
+Run a deterministic cascade from an initial failure:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/api/cascade `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"component_type":"line","component_id":"line-101","max_steps":20}'
+```
+
+The cascade engine stores every simulated step in the response, but the current frontend only displays the final cascade state and summary metrics.
+
 ### Frontend
 
 From `tripwire/frontend`:
@@ -168,17 +180,18 @@ Implemented:
 - `GET /health` endpoint returning `{"status":"ok"}`.
 - `GET /api/grid` endpoint returning a solved pandapower network.
 - `POST /api/failure` endpoint for single component outage simulation.
+- `POST /api/cascade` endpoint for deterministic cascading-failure simulation.
 - `POST /api/reset` endpoint for restoring the baseline scenario.
 - Next.js frontend configured for backend communication.
 - React Flow grid visualization.
 - Generator, bus, load, and transmission-line display.
 - Selection details panel.
 - Basic failure and reset controls.
+- Basic cascade action showing the final cascade state and summary metrics.
 - Backend and frontend ignore files.
 
 Not implemented yet:
 
-- Cascading-failure simulation.
 - Step-by-step cascade playback.
 - Interactive grid editor.
 - Machine-learning prediction.

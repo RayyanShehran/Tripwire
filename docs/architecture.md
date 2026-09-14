@@ -9,9 +9,11 @@ The frontend is a Next.js application written in TypeScript. It is responsible f
 - Rendering the power-grid interface with React Flow.
 - Managing user interactions such as selecting nodes or transmission lines.
 - Sending single-component failure requests to the backend.
+- Sending deterministic cascade simulation requests to the backend.
 - Resetting the current scenario.
 - Displaying solved operating metrics returned by the backend.
-- Displaying future cascade states and decision-support metrics.
+- Displaying the final cascade state and summary metrics.
+- Displaying future cascade timeline playback and decision-support metrics.
 - Calling the FastAPI backend through a configurable API base URL.
 
 Core frontend packages:
@@ -29,9 +31,9 @@ The backend is a FastAPI application. It is responsible for:
 - Running a normal power-flow calculation.
 - Returning the current solved grid state.
 - Applying single-component outages to the current scenario.
+- Running deterministic cascading-failure simulations from an initial outage.
 - Resetting the current scenario to the healthy baseline.
-- Running future cascading-failure simulation logic.
-- Returning future step-by-step cascade state and severity metrics.
+- Returning step-by-step cascade state and severity metrics.
 
 Core backend packages:
 
@@ -45,6 +47,7 @@ Core backend packages:
 Grid logic lives under `backend/app/simulation/` instead of inside API route handlers.
 
 - `grid.py` creates the sample grid, runs pandapower, applies component outages, detects supplied buses, assigns component status, and serializes API-safe JSON.
+- `cascade.py` runs deterministic cascading-failure simulations from one initial component failure.
 - `scenario.py` stores the current local scenario in memory and applies/reset failures against a fresh grid solve.
 
 The current grid is a single-voltage 230 kV teaching network. This avoids invalid direct line connections across voltage levels while keeping the topology easy to inspect.
@@ -66,6 +69,51 @@ Status rules:
 - Overloaded: loading above 100%.
 - Failed: out of service, disconnected, unsupplied, or missing a valid solved value.
 
+## Cascade Engine
+
+The cascade engine is deterministic and bounded. It does not use randomness, machine learning, or mitigation recommendations.
+
+Current flow:
+
+1. Start from the healthy baseline grid.
+2. Apply the requested initial component failure.
+3. Run pandapower.
+4. Record the solved grid state.
+5. Find in-service transmission lines above the cascade trip threshold.
+6. Trip those overloaded lines.
+7. Re-run pandapower.
+8. Repeat until the cascade terminates.
+
+Current centralized cascade settings:
+
+```text
+CASCADE_TRIP_THRESHOLD_PERCENT = 100.0
+DEFAULT_MAX_CASCADE_STEPS = 20
+```
+
+Termination reasons:
+
+```text
+stable
+max_steps_reached
+power_flow_failed
+total_blackout
+no_additional_failures
+```
+
+Every returned cascade step contains:
+
+```text
+step
+event
+newly_failed_components
+overloaded_lines
+grid
+metrics
+```
+
+This prepares the backend for future timeline playback. The current frontend intentionally displays only the final cascade state and summary.
+
 ## API Boundary
 
 The frontend reads `NEXT_PUBLIC_API_BASE_URL` and uses it for API requests. During local development, this should point to:
@@ -80,6 +128,7 @@ Current endpoints:
 GET /health
 GET /api/grid
 POST /api/failure
+POST /api/cascade
 POST /api/reset
 ```
 
@@ -110,4 +159,14 @@ max_line_loading_percent
 }
 ```
 
-This is not a cascading-failure simulation yet. It is a single-component outage workflow that prepares the backend and frontend for the later cascade engine.
+`POST /api/cascade` accepts the same component fields plus an optional `max_steps` value:
+
+```json
+{
+  "component_type": "line",
+  "component_id": "line-101",
+  "max_steps": 20
+}
+```
+
+The cascade endpoint returns the initial failure, termination reason, cascade depth, all preserved steps, and final metrics such as load lost percentage, failed component count, failed line count, and peak line loading.
