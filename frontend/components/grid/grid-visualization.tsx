@@ -15,6 +15,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel } from "./info-panel";
 import {
   fetchGrid,
@@ -55,6 +56,9 @@ export function GridVisualization() {
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
   const [grid, setGrid] = useState<ApiGridResponse | null>(null);
   const [cascadeResult, setCascadeResult] = useState<ApiCascadeResponse | null>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -140,6 +144,35 @@ export function GridVisualization() {
     };
   }, [apiBaseUrl, applyGridResponse, setEdges, setNodes]);
 
+  useEffect(() => {
+    if (!cascadeResult) {
+      return;
+    }
+
+    const step = cascadeResult.steps[currentStepIndex];
+    if (step) {
+      applyGridResponse(step.grid);
+    }
+  }, [applyGridResponse, cascadeResult, currentStepIndex]);
+
+  useEffect(() => {
+    if (!isPlaying || !cascadeResult) {
+      return;
+    }
+
+    const finalStepIndex = cascadeResult.steps.length - 1;
+    if (currentStepIndex >= finalStepIndex) {
+      setIsPlaying(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setCurrentStepIndex((stepIndex) => Math.min(stepIndex + 1, finalStepIndex));
+    }, 1000 / playbackSpeed);
+
+    return () => window.clearTimeout(timeout);
+  }, [cascadeResult, currentStepIndex, isPlaying, playbackSpeed]);
+
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
       const firstNode = selectedNodes[0];
@@ -177,6 +210,8 @@ export function GridVisualization() {
         componentId,
       );
       setCascadeResult(null);
+      setCurrentStepIndex(0);
+      setIsPlaying(false);
       applyGridResponse(response);
     } catch (error) {
       setErrorMessage(
@@ -193,6 +228,8 @@ export function GridVisualization() {
       setErrorMessage(null);
       const response = await resetScenario(apiBaseUrl);
       setCascadeResult(null);
+      setCurrentStepIndex(0);
+      setIsPlaying(false);
       applyGridResponse(response);
     } catch (error) {
       setErrorMessage(
@@ -219,12 +256,10 @@ export function GridVisualization() {
         componentType as ApiComponentType,
         componentId,
       );
-      const finalStep = response.steps.at(-1);
 
       setCascadeResult(response);
-      if (finalStep) {
-        applyGridResponse(finalStep.grid);
-      }
+      setCurrentStepIndex(0);
+      setIsPlaying(response.steps.length > 1);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to run cascade",
@@ -232,7 +267,43 @@ export function GridVisualization() {
     } finally {
       setIsMutating(false);
     }
-  }, [apiBaseUrl, applyGridResponse, selected]);
+  }, [apiBaseUrl, selected]);
+
+  const handleSelectStep = useCallback((stepIndex: number) => {
+    setCurrentStepIndex(stepIndex);
+    setIsPlaying(false);
+  }, []);
+
+  const handlePreviousStep = useCallback(() => {
+    setIsPlaying(false);
+    setCurrentStepIndex((stepIndex) => Math.max(stepIndex - 1, 0));
+  }, []);
+
+  const handleNextStep = useCallback(() => {
+    setIsPlaying(false);
+    setCurrentStepIndex((stepIndex) => {
+      const finalStepIndex = cascadeResult ? cascadeResult.steps.length - 1 : 0;
+      return Math.min(stepIndex + 1, finalStepIndex);
+    });
+  }, [cascadeResult]);
+
+  const handleTogglePlayback = useCallback(() => {
+    if (!cascadeResult || cascadeResult.steps.length <= 1) {
+      return;
+    }
+
+    setIsPlaying((playing) => {
+      if (playing) {
+        return false;
+      }
+
+      if (currentStepIndex >= cascadeResult.steps.length - 1) {
+        setCurrentStepIndex(0);
+      }
+
+      return true;
+    });
+  }, [cascadeResult, currentStepIndex]);
 
   return (
     <ReactFlowProvider>
@@ -248,6 +319,18 @@ export function GridVisualization() {
               <Metric label="Failed components" value={(metrics.failedLines + metrics.failedNodes).toString()} />
             </div>
           </div>
+
+          <CascadeTimeline
+            cascade={cascadeResult}
+            currentStepIndex={currentStepIndex}
+            isPlaying={isPlaying}
+            onNextStep={handleNextStep}
+            onPlaybackSpeedChange={setPlaybackSpeed}
+            onPreviousStep={handlePreviousStep}
+            onSelectStep={handleSelectStep}
+            onTogglePlayback={handleTogglePlayback}
+            playbackSpeed={playbackSpeed}
+          />
 
           <div className="h-[720px] min-h-[560px] flex-1">
             {isLoading ? (
