@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from collections.abc import Callable
+from typing import Any, Literal, TypedDict
 
 from app.simulation.grid import (
     GridComponentType,
@@ -79,13 +80,14 @@ def simulate_cascade(
     component_id: str,
     max_steps: int = DEFAULT_MAX_CASCADE_STEPS,
     cascade_trip_threshold_percent: float = CASCADE_TRIP_THRESHOLD_PERCENT,
+    net_factory: Callable[[], Any] | None = None,
 ) -> CascadeResponse:
     if max_steps < 0:
         raise ValueError("max_steps must be greater than or equal to 0")
     if cascade_trip_threshold_percent <= 0:
         raise ValueError("cascade_trip_threshold_percent must be greater than 0")
 
-    net = create_test_grid()
+    net = net_factory() if net_factory is not None else create_test_grid()
     initial_failure: FailedComponent = {
         "component_type": component_type,
         "component_id": component_id,
