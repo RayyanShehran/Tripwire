@@ -30,6 +30,44 @@ Current backend libraries:
 - `NumPy` and `pandas` for numerical and tabular data processing.
 - `scikit-learn` for future vulnerability prediction models.
 
+## Dataset Pipeline
+
+Tripwire includes an offline dataset generator for future ML work. It is not exposed through the web API.
+
+Pipeline:
+
+```text
+pandapower simulation -> deterministic scenario generator -> cascade outcomes -> CSV dataset -> future ML training
+```
+
+Generate the default dataset from `tripwire/backend`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\generate_dataset.py --seed 42
+```
+
+Default output:
+
+```text
+backend/data/generated/tripwire_scenarios.csv
+backend/data/generated/dataset_metadata.json
+```
+
+Useful options:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\generate_dataset.py `
+  --output data\generated\tripwire_scenarios.csv `
+  --seed 42 `
+  --load-multipliers 0.8,0.9,1.0,1.1,1.2 `
+  --component-types line,bus `
+  --max-scenarios 5000
+```
+
+Feature columns are pre-failure inputs only, including operating condition, grid loading, reserve margin, component loading/capacity, endpoint voltages, and topology features. Target columns are post-cascade outcomes, including cascade depth, failed components, unserved load, load lost percentage, termination reason, and severity label.
+
+`cascade_happened` is defined as true only when at least one secondary failure occurs after the initial failure.
+
 ## Current Grid Model
 
 The backend creates a small 230 kV teaching network with:
@@ -161,7 +199,7 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 Backend:
 
 ```powershell
-pytest
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
 Frontend:
@@ -191,10 +229,13 @@ Implemented:
 - Previous, play/pause, next, and speed controls.
 - Current-step cascade metrics and final cascade summary.
 - Current-step emphasis for newly failed components and overloaded lines.
+- Offline scenario dataset generation.
+- CSV and metadata output for future ML training.
 - Backend and frontend ignore files.
 
 Not implemented yet:
 
 - Interactive grid editor.
 - Machine-learning prediction.
+- Machine-learning model training.
 - Mitigation recommendation engine.

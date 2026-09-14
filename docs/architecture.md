@@ -35,6 +35,7 @@ The backend is a FastAPI application. It is responsible for:
 - Running deterministic cascading-failure simulations from an initial outage.
 - Resetting the current scenario to the healthy baseline.
 - Returning step-by-step cascade state and severity metrics.
+- Generating offline CSV scenario datasets for future ML training.
 
 Core backend packages:
 
@@ -50,6 +51,7 @@ Grid logic lives under `backend/app/simulation/` instead of inside API route han
 - `grid.py` creates the sample grid, runs pandapower, applies component outages, detects supplied buses, assigns component status, and serializes API-safe JSON.
 - `cascade.py` runs deterministic cascading-failure simulations from one initial component failure.
 - `scenario.py` stores the current local scenario in memory and applies/reset failures against a fresh grid solve.
+- `app/ml/dataset.py` generates machine-learning-ready scenario rows from pre-failure features and post-cascade targets.
 
 The current grid is a single-voltage 230 kV teaching network. This avoids invalid direct line connections across voltage levels while keeping the topology easy to inspect.
 
@@ -180,3 +182,69 @@ max_line_loading_percent
 ```
 
 The cascade endpoint returns the initial failure, termination reason, cascade depth, all preserved steps, and final metrics such as load lost percentage, failed component count, failed line count, and peak line loading.
+
+## Dataset Pipeline
+
+Dataset generation is an offline backend workflow. It is intentionally not exposed as a public API endpoint.
+
+Flow:
+
+```text
+healthy grid model
+-> operating-condition perturbations
+-> initial failure candidates
+-> pre-failure feature extraction
+-> deterministic cascade simulation
+-> target/label extraction
+-> CSV + metadata
+```
+
+Default output:
+
+```text
+backend/data/generated/tripwire_scenarios.csv
+backend/data/generated/dataset_metadata.json
+```
+
+Feature columns are limited to values known before the initial failure:
+
+```text
+scenario metadata
+load multiplier
+pre-failure demand and generation
+reserve margin
+pre-failure line loading statistics
+network component counts
+failed component pre-failure loading/capacity
+endpoint voltage and degree
+NetworkX centrality/path features
+```
+
+Target columns are post-cascade labels and outcomes:
+
+```text
+cascade_happened
+cascade_depth
+total_failed_lines
+total_failed_components
+overloaded_events
+served_load_mw
+unserved_load_mw
+load_lost_percent
+peak_line_loading_percent
+termination_reason
+severity_label
+```
+
+The `cascade_happened` target is true only when at least one secondary failure occurs after the initial failure. It is false for scenarios where only the initial component fails.
+
+Severity labels are deterministic:
+
+```text
+LOW: 0 <= load lost < 5%
+MODERATE: 5 <= load lost < 20%
+HIGH: 20 <= load lost < 50%
+CRITICAL: load lost >= 50%
+```
+
+The generator validates that scenario IDs are unique, required fields are present, numeric values are finite, and severity labels are known.
