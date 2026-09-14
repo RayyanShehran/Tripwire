@@ -38,7 +38,7 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
         <dl className="mt-5">
           <Row label="Type" value={node.data.type} />
           <Row label="Status" value={node.data.status} />
-          <Row label="Voltage" value={`${node.data.voltageKv} p.u.`} />
+          <Row label="Voltage" value={formatNullableValue(node.data.voltagePu, " p.u.")} />
           {node.data.generationMw !== undefined ? (
             <Row label="Generation" value={`${node.data.generationMw} MW`} />
           ) : null}
@@ -64,12 +64,16 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
         <Row label="Status" value={line.data?.status ?? "Unknown"} />
         <Row
           label="Loading"
-          value={`${line.data?.loadingPercent ?? 0}%`}
+          value={formatNullableValue(line.data?.loadingPercent ?? null, "%")}
         />
-        <Row label="Capacity" value={`${line.data?.capacityMw ?? 0} MW`} />
+        <Row label="Capacity" value={formatNullableValue(line.data?.capacityMw ?? null, " MW")} />
         <Row label="Source" value={line.source} />
         <Row label="Target" value={line.target} />
       </dl>
     </aside>
   );
+}
+
+function formatNullableValue(value: number | null, suffix: string) {
+  return value === null ? "N/A" : `${value}${suffix}`;
 }

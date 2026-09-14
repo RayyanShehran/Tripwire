@@ -57,8 +57,10 @@ export function GridVisualization() {
         failedLines: edges.filter((edge) => edge.data?.status === "Failed").length,
         failedNodes: nodes.filter((node) => node.data.status === "Failed").length,
         maxLineLoading: `${grid.metrics.max_line_loading_percent.toFixed(1)}%`,
+        totalDemand: `${grid.metrics.total_demand_mw.toFixed(1)} MW`,
         totalGeneration: `${grid.metrics.total_generation_mw.toFixed(1)} MW`,
-        totalLoad: `${grid.metrics.total_load_mw.toFixed(1)} MW`,
+        servedLoad: `${grid.metrics.served_load_mw.toFixed(1)} MW`,
+        unservedLoad: `${grid.metrics.unserved_load_mw.toFixed(1)} MW`,
       };
     }
 
@@ -69,8 +71,10 @@ export function GridVisualization() {
       failedLines,
       failedNodes,
       maxLineLoading: "0.0%",
+      totalDemand: "0.0 MW",
       totalGeneration: "0.0 MW",
-      totalLoad: "0.0 MW",
+      servedLoad: "0.0 MW",
+      unservedLoad: "0.0 MW",
     };
   }, [edges, grid, nodes]);
 
@@ -141,9 +145,11 @@ export function GridVisualization() {
       <section className="grid min-h-[calc(100vh-82px)] grid-cols-1 bg-neutral-100 lg:grid-cols-[1fr_340px]">
         <div className="flex min-w-0 flex-col">
           <div className="border-b border-neutral-200 bg-white px-5 py-4">
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <Metric label="Generation" value={metrics.totalGeneration} />
-              <Metric label="Load" value={metrics.totalLoad} />
+              <Metric label="Demand" value={metrics.totalDemand} />
+              <Metric label="Served load" value={metrics.servedLoad} />
+              <Metric label="Unserved load" value={metrics.unservedLoad} />
               <Metric label="Max line loading" value={metrics.maxLineLoading} />
               <Metric label="Failed components" value={(metrics.failedLines + metrics.failedNodes).toString()} />
             </div>
@@ -229,13 +235,13 @@ function toFlowData(grid: ApiGridResponse): { nodes: GridNode[]; edges: GridLine
     ...generatorNodes.map((node) => ({
       id: node.id,
       type: "generator" as const,
-      position: attachmentPosition(node.connected_bus_id, busPositions, attachmentCounts, -210),
+      position: attachmentPosition(node.connected_bus_id ?? undefined, busPositions, attachmentCounts, -210),
       data: toNodeData(node),
     })),
     ...loadNodes.map((node) => ({
       id: node.id,
       type: "load" as const,
-      position: attachmentPosition(node.connected_bus_id, busPositions, attachmentCounts, 210),
+      position: attachmentPosition(node.connected_bus_id ?? undefined, busPositions, attachmentCounts, 210),
       data: toNodeData(node),
     })),
   ];
@@ -249,7 +255,7 @@ function toFlowData(grid: ApiGridResponse): { nodes: GridNode[]; edges: GridLine
   }));
 
   const attachmentEdges: GridLine[] = [...generatorNodes, ...loadNodes]
-    .filter((node) => node.connected_bus_id)
+    .filter((node) => node.connected_bus_id !== null)
     .map((node) => ({
       id: `connection-${node.id}`,
       type: "transmissionLine" as const,
@@ -260,7 +266,7 @@ function toFlowData(grid: ApiGridResponse): { nodes: GridNode[]; edges: GridLine
         loadingPercent: 0,
         capacityMw: 0,
         status: toDisplayConnectionStatus(node.status),
-      },
+        },
       selectable: false,
     }));
 

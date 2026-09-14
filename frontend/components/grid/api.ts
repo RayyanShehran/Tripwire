@@ -8,10 +8,10 @@ export type ApiGridNode = {
   name: string;
   type: ApiNodeType;
   status: ApiStatus;
-  voltage: number;
-  generation_mw?: number;
-  load_mw?: number;
-  connected_bus_id?: string;
+  voltage: number | null;
+  generation_mw: number | null;
+  load_mw: number | null;
+  connected_bus_id: string | null;
 };
 
 export type ApiGridLine = {
@@ -19,14 +19,16 @@ export type ApiGridLine = {
   name?: string;
   source: string;
   target: string;
-  capacity_mw: number;
-  loading_percent: number;
+  capacity_mw: number | null;
+  loading_percent: number | null;
   status: ApiStatus;
 };
 
 export type ApiGridMetrics = {
+  total_demand_mw: number;
+  served_load_mw: number;
+  unserved_load_mw: number;
   total_generation_mw: number;
-  total_load_mw: number;
   max_line_loading_percent: number;
 };
 
@@ -69,10 +71,10 @@ export function toNodeData(node: ApiGridNode): GridNodeData {
           ? "Load"
           : "Substation / Bus",
     status: toDisplayStatus(node.status),
-    generationMw: node.generation_mw,
-    loadMw: node.load_mw,
-    voltageKv: node.voltage,
-    connectedBusId: node.connected_bus_id,
+    generationMw: node.generation_mw ?? undefined,
+    loadMw: node.load_mw ?? undefined,
+    voltagePu: node.voltage,
+    connectedBusId: node.connected_bus_id ?? undefined,
   };
 }
 

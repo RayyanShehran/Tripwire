@@ -1,7 +1,14 @@
-from fastapi import FastAPI, HTTPException
+from typing import Annotated
+
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.simulation.grid import GridConvergenceError, get_grid_response
+from app.simulation.grid import (
+    GridComponentNotFoundError,
+    GridComponentType,
+    GridConvergenceError,
+    get_grid_response,
+)
 
 app = FastAPI(
     title="Tripwire API",
@@ -28,8 +35,13 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/api/grid")
-async def get_grid() -> dict:
+async def get_grid(
+    outage_type: Annotated[GridComponentType | None, Query()] = None,
+    outage_id: Annotated[str | None, Query()] = None,
+) -> dict:
     try:
-        return get_grid_response()
+        return get_grid_response(outage_type=outage_type, outage_id=outage_id)
+    except GridComponentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

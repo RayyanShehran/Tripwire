@@ -48,7 +48,7 @@ export function TransmissionLine({
           strokeDasharray: status === "Failed" ? "8 6" : undefined,
         }}
       />
-      {data && data.capacityMw > 0 ? (
+      {data && data.capacityMw !== null && data.capacityMw > 0 ? (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan pointer-events-none absolute rounded border border-neutral-200 bg-white px-2 py-1 text-[10px] font-semibold text-neutral-700 shadow-sm"
@@ -56,10 +56,14 @@ export function TransmissionLine({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             }}
           >
-            {data.name} · {data.loadingPercent}% · {data.capacityMw} MW
+            {data.name} · {formatNullableValue(data.loadingPercent, "%")} · {data.capacityMw} MW
           </div>
         </EdgeLabelRenderer>
       ) : null}
     </>
   );
+}
+
+function formatNullableValue(value: number | null, suffix: string) {
+  return value === null ? "N/A" : `${value}${suffix}`;
 }

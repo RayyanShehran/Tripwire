@@ -32,7 +32,7 @@ function NodeShell({
         <div className={`h-3 w-3 rounded-full ${accent}`} />
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-neutral-700">
-        <span>{data.voltageKv} p.u.</span>
+        <span>{formatValue(data.voltagePu, " p.u.")}</span>
         <span className={`rounded px-2 py-0.5 font-semibold ${styles.badge}`}>
           {data.status}
         </span>
@@ -61,4 +61,8 @@ export function BusNode({ data }: GridNodeProps) {
 
 export function LoadNode({ data }: GridNodeProps) {
   return <NodeShell accent="bg-rose-500" data={data} />;
+}
+
+function formatValue(value: number | null, suffix: string) {
+  return value === null ? "N/A" : `${value}${suffix}`;
 }

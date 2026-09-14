@@ -9,14 +9,14 @@ export type GridNodeData = {
   status: GridStatus;
   generationMw?: number;
   loadMw?: number;
-  voltageKv: number;
+  voltagePu: number | null;
   connectedBusId?: string;
 };
 
 export type GridLineData = {
   name: string;
-  loadingPercent: number;
-  capacityMw: number;
+  loadingPercent: number | null;
+  capacityMw: number | null;
   status: GridStatus;
 };
 
