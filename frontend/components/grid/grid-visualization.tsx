@@ -16,7 +16,15 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { InfoPanel } from "./info-panel";
-import { fetchGrid, toLineData, toNodeData, type ApiGridResponse } from "./api";
+import {
+  fetchGrid,
+  resetScenario,
+  simulateFailure,
+  toLineData,
+  toNodeData,
+  type ApiComponentType,
+  type ApiGridResponse,
+} from "./api";
 import { statusStyles } from "./status";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
@@ -45,6 +53,7 @@ export function GridVisualization() {
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
   const [grid, setGrid] = useState<ApiGridResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const flowData = useMemo(() => (grid ? toFlowData(grid) : { nodes: [], edges: [] }), [grid]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
@@ -78,23 +87,31 @@ export function GridVisualization() {
     };
   }, [edges, grid, nodes]);
 
+  const applyGridResponse = useCallback(
+    (response: ApiGridResponse) => {
+      const nextFlowData = toFlowData(response);
+
+      setGrid(response);
+      setNodes(nextFlowData.nodes);
+      setEdges(nextFlowData.edges);
+      setSelected(null);
+    },
+    [setEdges, setNodes],
+  );
+
   useEffect(() => {
     let isMounted = true;
-
     async function loadGrid() {
       try {
         setIsLoading(true);
         setErrorMessage(null);
         const response = await fetchGrid(apiBaseUrl);
-        const nextFlowData = toFlowData(response);
 
         if (!isMounted) {
           return;
         }
 
-        setGrid(response);
-        setNodes(nextFlowData.nodes);
-        setEdges(nextFlowData.edges);
+        applyGridResponse(response);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -118,7 +135,7 @@ export function GridVisualization() {
     return () => {
       isMounted = false;
     };
-  }, [apiBaseUrl, setEdges, setNodes]);
+  }, [apiBaseUrl, applyGridResponse, setEdges, setNodes]);
 
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
@@ -139,6 +156,47 @@ export function GridVisualization() {
     },
     [],
   );
+
+  const handleSimulateFailure = useCallback(async () => {
+    if (!selected) {
+      return;
+    }
+
+    const componentType = selected.kind === "line" ? "line" : selected.item.type;
+    const componentId = selected.item.id;
+
+    try {
+      setIsMutating(true);
+      setErrorMessage(null);
+      const response = await simulateFailure(
+        apiBaseUrl,
+        componentType as ApiComponentType,
+        componentId,
+      );
+      applyGridResponse(response);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to simulate failure",
+      );
+    } finally {
+      setIsMutating(false);
+    }
+  }, [apiBaseUrl, applyGridResponse, selected]);
+
+  const handleResetScenario = useCallback(async () => {
+    try {
+      setIsMutating(true);
+      setErrorMessage(null);
+      const response = await resetScenario(apiBaseUrl);
+      applyGridResponse(response);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to reset scenario",
+      );
+    } finally {
+      setIsMutating(false);
+    }
+  }, [apiBaseUrl, applyGridResponse]);
 
   return (
     <ReactFlowProvider>
@@ -192,7 +250,12 @@ export function GridVisualization() {
           </div>
         </div>
 
-        <InfoPanel selected={selected} />
+        <InfoPanel
+          isMutating={isMutating}
+          onResetScenario={handleResetScenario}
+          onSimulateFailure={handleSimulateFailure}
+          selected={selected}
+        />
       </section>
     </ReactFlowProvider>
   );

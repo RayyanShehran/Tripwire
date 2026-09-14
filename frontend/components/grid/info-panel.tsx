@@ -11,7 +11,19 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
+type InfoPanelProps = {
+  isMutating: boolean;
+  onResetScenario: () => void;
+  onSimulateFailure: () => void;
+  selected: SelectedGridElement;
+};
+
+export function InfoPanel({
+  isMutating,
+  onResetScenario,
+  onSimulateFailure,
+  selected,
+}: InfoPanelProps) {
   if (!selected) {
     return (
       <aside className="h-full border-l border-neutral-200 bg-white p-5">
@@ -20,6 +32,12 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
           Select a generator, bus, load, or transmission line to inspect its
           current solved operating state.
         </p>
+        <PanelActions
+          canSimulate={false}
+          isMutating={isMutating}
+          onResetScenario={onResetScenario}
+          onSimulateFailure={onSimulateFailure}
+        />
       </aside>
     );
   }
@@ -33,7 +51,7 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
           Node
         </p>
         <h2 className="mt-1 text-lg font-semibold text-neutral-950">
-          {node.data.name}
+        {node.data.name}
         </h2>
         <dl className="mt-5">
           <Row label="Type" value={node.data.type} />
@@ -46,6 +64,12 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
             <Row label="Load" value={`${node.data.loadMw} MW`} />
           ) : null}
         </dl>
+        <PanelActions
+          canSimulate
+          isMutating={isMutating}
+          onResetScenario={onResetScenario}
+          onSimulateFailure={onSimulateFailure}
+        />
       </aside>
     );
   }
@@ -70,10 +94,49 @@ export function InfoPanel({ selected }: { selected: SelectedGridElement }) {
         <Row label="Source" value={line.source} />
         <Row label="Target" value={line.target} />
       </dl>
+      <PanelActions
+        canSimulate
+        isMutating={isMutating}
+        onResetScenario={onResetScenario}
+        onSimulateFailure={onSimulateFailure}
+      />
     </aside>
   );
 }
 
 function formatNullableValue(value: number | null, suffix: string) {
   return value === null ? "N/A" : `${value}${suffix}`;
+}
+
+function PanelActions({
+  canSimulate,
+  isMutating,
+  onResetScenario,
+  onSimulateFailure,
+}: {
+  canSimulate: boolean;
+  isMutating: boolean;
+  onResetScenario: () => void;
+  onSimulateFailure: () => void;
+}) {
+  return (
+    <div className="mt-6 grid gap-2">
+      <button
+        className="rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+        disabled={!canSimulate || isMutating}
+        onClick={onSimulateFailure}
+        type="button"
+      >
+        Simulate Failure
+      </button>
+      <button
+        className="rounded border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 disabled:cursor-not-allowed disabled:text-neutral-400"
+        disabled={isMutating}
+        onClick={onResetScenario}
+        type="button"
+      >
+        Reset Scenario
+      </button>
+    </div>
+  );
 }

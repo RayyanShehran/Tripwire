@@ -2,6 +2,7 @@ import type { GridLineData, GridNodeData, GridStatus } from "./types";
 
 export type ApiStatus = "healthy" | "stressed" | "overloaded" | "failed";
 export type ApiNodeType = "generator" | "bus" | "load";
+export type ApiComponentType = "generator" | "bus" | "load" | "line";
 
 export type ApiGridNode = {
   id: string;
@@ -52,6 +53,43 @@ export async function fetchGrid(apiBaseUrl: string): Promise<ApiGridResponse> {
 
   if (!response.ok) {
     throw new Error(`Grid API returned ${response.status}`);
+  }
+
+  return (await response.json()) as ApiGridResponse;
+}
+
+export async function simulateFailure(
+  apiBaseUrl: string,
+  componentType: ApiComponentType,
+  componentId: string,
+): Promise<ApiGridResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/failure`, {
+    body: JSON.stringify({
+      component_type: componentType,
+      component_id: componentId,
+    }),
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failure API returned ${response.status}`);
+  }
+
+  return (await response.json()) as ApiGridResponse;
+}
+
+export async function resetScenario(apiBaseUrl: string): Promise<ApiGridResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/reset`, {
+    cache: "no-store",
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Reset API returned ${response.status}`);
   }
 
   return (await response.json()) as ApiGridResponse;
