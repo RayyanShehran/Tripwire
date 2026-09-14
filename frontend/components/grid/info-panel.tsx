@@ -12,14 +12,25 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 type InfoPanelProps = {
+  cascadeSummary: CascadeSummary | null;
   isMutating: boolean;
+  onRunCascade: () => void;
   onResetScenario: () => void;
   onSimulateFailure: () => void;
   selected: SelectedGridElement;
 };
 
+export type CascadeSummary = {
+  cascadeDepth: number;
+  failedComponents: number;
+  loadLostPercent: number;
+  terminationReason: string;
+};
+
 export function InfoPanel({
+  cascadeSummary,
   isMutating,
+  onRunCascade,
   onResetScenario,
   onSimulateFailure,
   selected,
@@ -34,10 +45,13 @@ export function InfoPanel({
         </p>
         <PanelActions
           canSimulate={false}
+          canRunCascade={false}
           isMutating={isMutating}
+          onRunCascade={onRunCascade}
           onResetScenario={onResetScenario}
           onSimulateFailure={onSimulateFailure}
         />
+        <CascadeSummaryPanel summary={cascadeSummary} />
       </aside>
     );
   }
@@ -66,10 +80,13 @@ export function InfoPanel({
         </dl>
         <PanelActions
           canSimulate
+          canRunCascade
           isMutating={isMutating}
+          onRunCascade={onRunCascade}
           onResetScenario={onResetScenario}
           onSimulateFailure={onSimulateFailure}
         />
+        <CascadeSummaryPanel summary={cascadeSummary} />
       </aside>
     );
   }
@@ -96,10 +113,13 @@ export function InfoPanel({
       </dl>
       <PanelActions
         canSimulate
+        canRunCascade
         isMutating={isMutating}
+        onRunCascade={onRunCascade}
         onResetScenario={onResetScenario}
         onSimulateFailure={onSimulateFailure}
       />
+      <CascadeSummaryPanel summary={cascadeSummary} />
     </aside>
   );
 }
@@ -109,13 +129,17 @@ function formatNullableValue(value: number | null, suffix: string) {
 }
 
 function PanelActions({
+  canRunCascade,
   canSimulate,
   isMutating,
+  onRunCascade,
   onResetScenario,
   onSimulateFailure,
 }: {
+  canRunCascade: boolean;
   canSimulate: boolean;
   isMutating: boolean;
+  onRunCascade: () => void;
   onResetScenario: () => void;
   onSimulateFailure: () => void;
 }) {
@@ -130,6 +154,14 @@ function PanelActions({
         Simulate Failure
       </button>
       <button
+        className="rounded bg-neutral-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+        disabled={!canRunCascade || isMutating}
+        onClick={onRunCascade}
+        type="button"
+      >
+        Run Cascade
+      </button>
+      <button
         className="rounded border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 disabled:cursor-not-allowed disabled:text-neutral-400"
         disabled={isMutating}
         onClick={onResetScenario}
@@ -139,4 +171,26 @@ function PanelActions({
       </button>
     </div>
   );
+}
+
+function CascadeSummaryPanel({ summary }: { summary: CascadeSummary | null }) {
+  if (!summary) {
+    return null;
+  }
+
+  return (
+    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
+      <h3 className="text-sm font-semibold text-neutral-950">Cascade Result</h3>
+      <dl className="mt-3">
+        <Row label="Termination" value={formatReason(summary.terminationReason)} />
+        <Row label="Depth" value={summary.cascadeDepth.toString()} />
+        <Row label="Load lost" value={`${summary.loadLostPercent.toFixed(1)}%`} />
+        <Row label="Failed components" value={summary.failedComponents.toString()} />
+      </dl>
+    </div>
+  );
+}
+
+function formatReason(reason: string) {
+  return reason.replaceAll("_", " ");
 }

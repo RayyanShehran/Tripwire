@@ -19,9 +19,11 @@ import { InfoPanel } from "./info-panel";
 import {
   fetchGrid,
   resetScenario,
+  runCascade,
   simulateFailure,
   toLineData,
   toNodeData,
+  type ApiCascadeResponse,
   type ApiComponentType,
   type ApiGridResponse,
 } from "./api";
@@ -52,6 +54,7 @@ export function GridVisualization() {
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
   const [grid, setGrid] = useState<ApiGridResponse | null>(null);
+  const [cascadeResult, setCascadeResult] = useState<ApiCascadeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -173,6 +176,7 @@ export function GridVisualization() {
         componentType as ApiComponentType,
         componentId,
       );
+      setCascadeResult(null);
       applyGridResponse(response);
     } catch (error) {
       setErrorMessage(
@@ -188,6 +192,7 @@ export function GridVisualization() {
       setIsMutating(true);
       setErrorMessage(null);
       const response = await resetScenario(apiBaseUrl);
+      setCascadeResult(null);
       applyGridResponse(response);
     } catch (error) {
       setErrorMessage(
@@ -197,6 +202,37 @@ export function GridVisualization() {
       setIsMutating(false);
     }
   }, [apiBaseUrl, applyGridResponse]);
+
+  const handleRunCascade = useCallback(async () => {
+    if (!selected) {
+      return;
+    }
+
+    const componentType = selected.kind === "line" ? "line" : selected.item.type;
+    const componentId = selected.item.id;
+
+    try {
+      setIsMutating(true);
+      setErrorMessage(null);
+      const response = await runCascade(
+        apiBaseUrl,
+        componentType as ApiComponentType,
+        componentId,
+      );
+      const finalStep = response.steps.at(-1);
+
+      setCascadeResult(response);
+      if (finalStep) {
+        applyGridResponse(finalStep.grid);
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to run cascade",
+      );
+    } finally {
+      setIsMutating(false);
+    }
+  }, [apiBaseUrl, applyGridResponse, selected]);
 
   return (
     <ReactFlowProvider>
@@ -251,7 +287,18 @@ export function GridVisualization() {
         </div>
 
         <InfoPanel
+          cascadeSummary={
+            cascadeResult
+              ? {
+                  cascadeDepth: cascadeResult.final_metrics.cascade_depth,
+                  failedComponents: cascadeResult.final_metrics.failed_components,
+                  loadLostPercent: cascadeResult.final_metrics.load_lost_percent,
+                  terminationReason: cascadeResult.termination_reason,
+                }
+              : null
+          }
           isMutating={isMutating}
+          onRunCascade={handleRunCascade}
           onResetScenario={handleResetScenario}
           onSimulateFailure={handleSimulateFailure}
           selected={selected}

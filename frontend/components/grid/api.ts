@@ -39,6 +39,53 @@ export type ApiGridResponse = {
   metrics: ApiGridMetrics;
 };
 
+export type ApiCascadeFinalMetrics = {
+  total_demand_mw: number;
+  served_load_mw: number;
+  unserved_load_mw: number;
+  load_lost_percent: number;
+  failed_components: number;
+  failed_lines: number;
+  cascade_depth: number;
+  peak_line_loading_percent: number;
+  overload_events: number;
+};
+
+export type ApiCascadeStep = {
+  step: number;
+  event: "initial_failure" | "cascade_step" | "power_flow_failed";
+  newly_failed_components: Array<{
+    component_type: ApiComponentType;
+    component_id: string;
+  }>;
+  overloaded_lines: Array<{
+    component_id: string;
+    loading_percent: number;
+  }>;
+  grid: ApiGridResponse;
+  metrics: ApiGridMetrics & {
+    failed_components: number;
+    failed_lines: number;
+    overloaded_lines: number;
+  };
+};
+
+export type ApiCascadeResponse = {
+  initial_failure: {
+    component_type: ApiComponentType;
+    component_id: string;
+  };
+  termination_reason:
+    | "stable"
+    | "max_steps_reached"
+    | "power_flow_failed"
+    | "total_blackout"
+    | "no_additional_failures";
+  cascade_depth: number;
+  steps: ApiCascadeStep[];
+  final_metrics: ApiCascadeFinalMetrics;
+};
+
 const displayStatuses: Record<ApiStatus, GridStatus> = {
   healthy: "Healthy",
   stressed: "Stressed",
@@ -93,6 +140,30 @@ export async function resetScenario(apiBaseUrl: string): Promise<ApiGridResponse
   }
 
   return (await response.json()) as ApiGridResponse;
+}
+
+export async function runCascade(
+  apiBaseUrl: string,
+  componentType: ApiComponentType,
+  componentId: string,
+): Promise<ApiCascadeResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/cascade`, {
+    body: JSON.stringify({
+      component_type: componentType,
+      component_id: componentId,
+    }),
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cascade API returned ${response.status}`);
+  }
+
+  return (await response.json()) as ApiCascadeResponse;
 }
 
 export function toDisplayStatus(status: ApiStatus): GridStatus {
