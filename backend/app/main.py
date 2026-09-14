@@ -65,6 +65,11 @@ def simulate_failure(request: FailureRequest) -> dict:
 
 @app.post("/api/reset")
 def reset_scenario() -> dict:
+    return reset_grid()
+
+
+@app.get("/api/reset")
+def reset_grid() -> dict:
     try:
         return get_baseline_grid()
     except GridConvergenceError as exc:
