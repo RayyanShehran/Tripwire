@@ -83,20 +83,14 @@ def simulate_failure(failure: ComponentFailure) -> FailureScenarioResponse:
 
 
 def scenario_metrics(grid: GridResponse) -> ScenarioMetrics:
-    total_demand = grid["metrics"]["total_demand_mw"]
-    unserved_load = grid["metrics"]["unserved_load_mw"]
-    failed_lines = sum(1 for line in grid["lines"] if line["status"] == "failed")
-    failed_nodes = sum(1 for node in grid["nodes"] if node["status"] == "failed")
-    load_lost_percent = 0.0 if total_demand == 0 else round((unserved_load / total_demand) * 100, 2)
-
     return {
-        "total_demand_mw": total_demand,
+        "total_demand_mw": grid["metrics"]["total_demand_mw"],
         "served_load_mw": grid["metrics"]["served_load_mw"],
-        "unserved_load_mw": unserved_load,
-        "load_lost_percent": load_lost_percent,
+        "unserved_load_mw": grid["metrics"]["unserved_load_mw"],
+        "load_lost_percent": grid["metrics"]["load_lost_percent"],
         "total_generation_mw": grid["metrics"]["total_generation_mw"],
-        "failed_components": failed_lines + failed_nodes,
-        "failed_lines": failed_lines,
+        "failed_components": grid["metrics"]["failed_components"],
+        "failed_lines": grid["metrics"]["failed_lines"],
         "max_line_loading_percent": grid["metrics"]["max_line_loading_percent"],
     }
 

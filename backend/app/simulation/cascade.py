@@ -40,6 +40,8 @@ class CascadeStepMetrics(TypedDict):
     total_demand_mw: float
     served_load_mw: float
     unserved_load_mw: float
+    load_lost_percent: float
+    total_generation_mw: float
     max_line_loading_percent: float
     failed_components: int
     failed_lines: int
@@ -60,6 +62,7 @@ class CascadeFinalMetrics(TypedDict):
     served_load_mw: float
     unserved_load_mw: float
     load_lost_percent: float
+    total_generation_mw: float
     failed_components: int
     failed_lines: int
     cascade_depth: int
@@ -168,9 +171,6 @@ def _build_step(
     overloaded_lines: list[OverloadedLine],
     grid: GridResponse,
 ) -> CascadeStep:
-    failed_lines = sum(1 for line in grid["lines"] if line["status"] == "failed")
-    failed_nodes = sum(1 for node in grid["nodes"] if node["status"] == "failed")
-
     return {
         "step": step_index,
         "event": event,
@@ -181,9 +181,11 @@ def _build_step(
             "total_demand_mw": grid["metrics"]["total_demand_mw"],
             "served_load_mw": grid["metrics"]["served_load_mw"],
             "unserved_load_mw": grid["metrics"]["unserved_load_mw"],
+            "load_lost_percent": grid["metrics"]["load_lost_percent"],
+            "total_generation_mw": grid["metrics"]["total_generation_mw"],
             "max_line_loading_percent": grid["metrics"]["max_line_loading_percent"],
-            "failed_components": failed_lines + failed_nodes,
-            "failed_lines": failed_lines,
+            "failed_components": grid["metrics"]["failed_components"],
+            "failed_lines": grid["metrics"]["failed_lines"],
             "overloaded_lines": len(overloaded_lines),
         },
     }
@@ -242,6 +244,7 @@ def _final_metrics(steps: list[CascadeStep]) -> CascadeFinalMetrics:
         "served_load_mw": final_step["metrics"]["served_load_mw"],
         "unserved_load_mw": unserved_load,
         "load_lost_percent": load_lost_percent,
+        "total_generation_mw": final_step["metrics"]["total_generation_mw"],
         "failed_components": final_step["metrics"]["failed_components"],
         "failed_lines": final_step["metrics"]["failed_lines"],
         "cascade_depth": max(len(steps) - 1, 0),

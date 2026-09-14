@@ -43,7 +43,10 @@ class GridMetricsResponse(TypedDict):
     total_demand_mw: float
     served_load_mw: float
     unserved_load_mw: float
+    load_lost_percent: float
     total_generation_mw: float
+    failed_components: int
+    failed_lines: int
     max_line_loading_percent: float
 
 
@@ -264,7 +267,7 @@ def serialize_grid_state(net: pp.pandapowerNet) -> GridResponse:
     return {
         "nodes": nodes,
         "lines": lines,
-        "metrics": calculate_grid_metrics(net, supplied_buses, lines),
+        "metrics": calculate_grid_metrics(net, supplied_buses, lines, nodes),
     }
 
 
@@ -276,6 +279,7 @@ def calculate_grid_metrics(
     net: pp.pandapowerNet,
     supplied_buses: set[int] | None = None,
     lines: list[GridLineResponse] | None = None,
+    nodes: list[GridNodeResponse] | None = None,
 ) -> GridMetricsResponse:
     if supplied_buses is None:
         supplied_buses = find_supplied_buses(net)
@@ -291,12 +295,19 @@ def calculate_grid_metrics(
         if line["loading_percent"] is not None
     ]
     max_loading = max(finite_line_loadings, default=0.0)
+    unserved_load = max(total_demand - served_load, 0.0)
+    load_lost_percent = 0.0 if total_demand == 0 else (unserved_load / total_demand) * 100
+    failed_lines = sum(1 for line in lines if line["status"] == "failed")
+    failed_nodes = sum(1 for node in nodes or [] if node["status"] == "failed")
 
     return {
         "total_demand_mw": round(total_demand, 2),
         "served_load_mw": round(served_load, 2),
-        "unserved_load_mw": round(max(total_demand - served_load, 0.0), 2),
+        "unserved_load_mw": round(unserved_load, 2),
+        "load_lost_percent": round(load_lost_percent, 2),
         "total_generation_mw": round(total_generation, 2),
+        "failed_components": failed_lines + failed_nodes,
+        "failed_lines": failed_lines,
         "max_line_loading_percent": round(max_loading, 2),
     }
 
