@@ -67,8 +67,45 @@ export function GridVisualization() {
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
   const [selected, setSelected] = useState<SelectedGridElement>(null);
+  const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
 
   const metrics = useMemo(() => {
+    if (currentCascadeStep) {
+      const loadLostPercent =
+        currentCascadeStep.metrics.total_demand_mw === 0
+          ? 0
+          : (currentCascadeStep.metrics.unserved_load_mw /
+              currentCascadeStep.metrics.total_demand_mw) *
+            100;
+
+      return [
+        {
+          label: "Served load",
+          value: `${currentCascadeStep.metrics.served_load_mw.toFixed(1)} MW`,
+        },
+        {
+          label: "Unserved load",
+          value: `${currentCascadeStep.metrics.unserved_load_mw.toFixed(1)} MW`,
+        },
+        {
+          label: "Load lost",
+          value: `${loadLostPercent.toFixed(1)}%`,
+        },
+        {
+          label: "Failed lines",
+          value: currentCascadeStep.metrics.failed_lines.toString(),
+        },
+        {
+          label: "Failed components",
+          value: currentCascadeStep.metrics.failed_components.toString(),
+        },
+        {
+          label: "Max line loading",
+          value: `${currentCascadeStep.metrics.max_line_loading_percent.toFixed(1)}%`,
+        },
+      ];
+    }
+
     if (grid) {
       return {
         failedLines: edges.filter((edge) => edge.data?.status === "Failed").length,
@@ -93,7 +130,7 @@ export function GridVisualization() {
       servedLoad: "0.0 MW",
       unservedLoad: "0.0 MW",
     };
-  }, [edges, grid, nodes]);
+  }, [currentCascadeStep, edges, grid, nodes]);
 
   const applyGridResponse = useCallback(
     (response: ApiGridResponse, step?: ApiCascadeStep) => {
@@ -312,14 +349,28 @@ export function GridVisualization() {
         <div className="flex min-w-0 flex-col">
           <div className="border-b border-neutral-200 bg-white px-5 py-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-              <Metric label="Generation" value={metrics.totalGeneration} />
-              <Metric label="Demand" value={metrics.totalDemand} />
-              <Metric label="Served load" value={metrics.servedLoad} />
-              <Metric label="Unserved load" value={metrics.unservedLoad} />
-              <Metric label="Max line loading" value={metrics.maxLineLoading} />
-              <Metric label="Failed components" value={(metrics.failedLines + metrics.failedNodes).toString()} />
+              {Array.isArray(metrics) ? (
+                metrics.map((metric) => (
+                  <Metric key={metric.label} label={metric.label} value={metric.value} />
+                ))
+              ) : (
+                <>
+                  <Metric label="Generation" value={metrics.totalGeneration} />
+                  <Metric label="Demand" value={metrics.totalDemand} />
+                  <Metric label="Served load" value={metrics.servedLoad} />
+                  <Metric label="Unserved load" value={metrics.unservedLoad} />
+                  <Metric label="Max line loading" value={metrics.maxLineLoading} />
+                  <Metric label="Failed components" value={(metrics.failedLines + metrics.failedNodes).toString()} />
+                </>
+              )}
             </div>
           </div>
+
+          {errorMessage && nodes.length > 0 ? (
+            <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm font-medium text-red-800">
+              {errorMessage}
+            </div>
+          ) : null}
 
           <CascadeTimeline
             cascade={cascadeResult}
@@ -336,7 +387,7 @@ export function GridVisualization() {
           <div className="h-[720px] min-h-[560px] flex-1">
             {isLoading ? (
               <StateMessage title="Loading grid" message="Fetching solved grid state from the FastAPI backend." />
-            ) : errorMessage ? (
+            ) : errorMessage && nodes.length === 0 ? (
               <StateMessage title="Backend unavailable" message={errorMessage} />
             ) : (
               <ReactFlow

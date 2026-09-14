@@ -167,7 +167,7 @@ function PanelActions({
         onClick={onResetScenario}
         type="button"
       >
-        Reset Scenario
+        Return to Baseline
       </button>
     </div>
   );
