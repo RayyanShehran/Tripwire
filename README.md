@@ -20,7 +20,7 @@ tripwire/
 Tripwire is split into a browser frontend and a Python API backend.
 
 - The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, single-component failure controls, and cascade timeline playback.
-- The backend exposes API endpoints for health checks, the solved grid state, one-off component failure simulation, deterministic cascade simulation, and scenario reset.
+- The backend exposes stateless API endpoints for health checks, the solved baseline grid, one-off component failure simulation, deterministic cascade simulation, and baseline reset.
 - The frontend communicates with the backend through the `NEXT_PUBLIC_API_BASE_URL` environment variable.
 
 Current backend libraries:
@@ -94,7 +94,17 @@ GET /api/grid
 POST /api/failure
 POST /api/cascade
 POST /api/reset
+GET /api/reset
 ```
+
+Scenario endpoints do not share hidden simulation state:
+
+- `GET /api/grid` always returns the healthy solved baseline.
+- `POST /api/failure` starts from a fresh baseline, applies one requested outage, and returns that solved or blackout scenario.
+- `POST /api/cascade` starts from a fresh baseline, applies one requested initial outage, and then trips overloaded lines step by step.
+- `POST /api/reset` and `GET /api/reset` return the healthy baseline.
+
+Outages do not carry over into later requests.
 
 Failure request body:
 
@@ -160,6 +170,27 @@ Invoke-RestMethod http://127.0.0.1:8000/api/failure `
   -Body '{"component_type":"line","component_id":"line-101"}'
 ```
 
+Single-failure responses wrap the rendered grid with scenario metadata:
+
+```json
+{
+  "status": "solved",
+  "termination_reason": "solved",
+  "initial_failure": {
+    "component_type": "line",
+    "component_id": "line-101"
+  },
+  "grid": {
+    "nodes": [],
+    "lines": [],
+    "metrics": {}
+  },
+  "metrics": {}
+}
+```
+
+If the initial outage disconnects the source bus, the API still returns HTTP 200 with a valid blackout response. Load metrics report zero served load and 100% load lost instead of returning non-finite JSON values.
+
 Reset the scenario:
 
 ```powershell
@@ -217,9 +248,9 @@ Implemented:
 - FastAPI backend.
 - `GET /health` endpoint returning `{"status":"ok"}`.
 - `GET /api/grid` endpoint returning a solved pandapower network.
-- `POST /api/failure` endpoint for single component outage simulation.
+- `POST /api/failure` endpoint for stateless single component outage simulation.
 - `POST /api/cascade` endpoint for deterministic cascading-failure simulation.
-- `POST /api/reset` endpoint for restoring the baseline scenario.
+- `POST /api/reset` and `GET /api/reset` endpoints for returning the healthy baseline.
 - Next.js frontend configured for backend communication.
 - React Flow grid visualization.
 - Generator, bus, load, and transmission-line display.

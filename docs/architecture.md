@@ -10,7 +10,7 @@ The frontend is a Next.js application written in TypeScript. It is responsible f
 - Managing user interactions such as selecting nodes or transmission lines.
 - Sending single-component failure requests to the backend.
 - Sending deterministic cascade simulation requests to the backend.
-- Resetting the current scenario.
+- Returning the display to the healthy baseline.
 - Displaying solved operating metrics returned by the backend.
 - Displaying cascade timeline playback from the stored backend response.
 - Displaying current-step cascade metrics and final summary metrics.
@@ -30,10 +30,10 @@ The backend is a FastAPI application. It is responsible for:
 - Serving API health/status endpoints.
 - Building a small pandapower transmission network.
 - Running a normal power-flow calculation.
-- Returning the current solved grid state.
-- Applying single-component outages to the current scenario.
+- Returning the healthy solved baseline grid state.
+- Applying single-component outages from a fresh baseline.
 - Running deterministic cascading-failure simulations from an initial outage.
-- Resetting the current scenario to the healthy baseline.
+- Returning the healthy baseline through reset endpoints.
 - Returning step-by-step cascade state and severity metrics.
 - Generating offline CSV scenario datasets for future ML training.
 
@@ -50,7 +50,7 @@ Grid logic lives under `backend/app/simulation/` instead of inside API route han
 
 - `grid.py` creates the sample grid, runs pandapower, applies component outages, detects supplied buses, assigns component status, and serializes API-safe JSON.
 - `cascade.py` runs deterministic cascading-failure simulations from one initial component failure.
-- `scenario.py` stores the current local scenario in memory and applies/reset failures against a fresh grid solve.
+- `scenario.py` builds stateless single-failure scenarios from a fresh baseline and wraps solved or blackout results with scenario metadata.
 - `app/ml/dataset.py` generates machine-learning-ready scenario rows from pre-failure features and post-cascade targets.
 
 The current grid is a single-voltage 230 kV teaching network. This avoids invalid direct line connections across voltage levels while keeping the topology easy to inspect.
@@ -74,7 +74,7 @@ Status rules:
 
 ## Cascade Engine
 
-The cascade engine is deterministic and bounded. It does not use randomness, machine learning, or mitigation recommendations.
+The cascade engine is deterministic, bounded, and stateless per request. It does not use randomness, machine learning, or mitigation recommendations.
 
 Current flow:
 
@@ -123,7 +123,7 @@ Current playback behavior:
 - Previous and Next move one step at a time.
 - Play/Pause advances through saved steps at 0.5x, 1x, or 2x speed.
 - Playback stops automatically on the final step.
-- Return to Baseline clears cascade state and reloads the healthy grid.
+- Return to Baseline clears frontend cascade state and reloads the healthy grid.
 - Newly failed components and currently overloaded lines are visually emphasized for the active step.
 
 ## API Boundary
@@ -142,7 +142,20 @@ GET /api/grid
 POST /api/failure
 POST /api/cascade
 POST /api/reset
+GET /api/reset
 ```
+
+Endpoint lifecycle rules:
+
+```text
+GET /api/grid      -> healthy solved baseline
+POST /api/failure  -> fresh baseline + one requested outage
+POST /api/cascade  -> fresh baseline + one initial outage + automatic secondary trips
+POST /api/reset    -> healthy solved baseline
+GET /api/reset     -> healthy solved baseline
+```
+
+No endpoint inherits outages from a previous request. This keeps repeated tests deterministic and avoids hidden process-level scenario state.
 
 `GET /api/grid` returns:
 
@@ -160,6 +173,9 @@ served_load_mw
 unserved_load_mw
 total_generation_mw
 max_line_loading_percent
+load_lost_percent
+failed_components
+failed_lines
 ```
 
 `POST /api/failure` accepts one component failure at a time:
@@ -170,6 +186,26 @@ max_line_loading_percent
   "component_id": "line-101"
 }
 ```
+
+It returns:
+
+```text
+status
+termination_reason
+initial_failure
+grid
+metrics
+```
+
+Failure termination reasons:
+
+```text
+solved
+no_slack_source
+total_blackout
+```
+
+A source/slack bus outage is represented as a valid HTTP 200 blackout scenario. The response keeps finite numeric metrics, including zero served load, full unserved demand, and 100% load lost.
 
 `POST /api/cascade` accepts the same component fields plus an optional `max_steps` value:
 
