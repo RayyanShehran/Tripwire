@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.simulation.cascade import DEFAULT_MAX_CASCADE_STEPS, simulate_cascade
 from app.simulation.grid import (
     GridComponentNotFoundError,
     GridComponentType,
@@ -36,6 +37,10 @@ scenario = GridScenario()
 class FailureRequest(BaseModel):
     component_type: GridComponentType
     component_id: str = Field(..., min_length=1)
+
+
+class CascadeRequest(FailureRequest):
+    max_steps: int = Field(default=DEFAULT_MAX_CASCADE_STEPS, ge=0, le=100)
 
 
 @app.get("/health")
@@ -77,3 +82,17 @@ async def reset_scenario() -> dict:
         return scenario.reset()
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/cascade")
+async def run_cascade(request: CascadeRequest) -> dict:
+    try:
+        return simulate_cascade(
+            component_type=request.component_type,
+            component_id=request.component_id,
+            max_steps=request.max_steps,
+        )
+    except GridComponentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
