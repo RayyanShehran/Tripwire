@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 
 import pandas as pd
 import pytest
@@ -125,6 +126,22 @@ def test_output_csv_can_be_loaded(tmp_path) -> None:
 
     assert len(loaded) == len(result.dataframe)
     assert list(loaded.columns) == DATASET_COLUMNS
+
+
+def test_metadata_json_can_be_loaded_without_nonstandard_numbers(tmp_path) -> None:
+    result = generate_dataset(
+        seed=19,
+        load_multipliers=(1.0,),
+        component_types=("line",),
+        max_scenarios=2,
+    )
+    output = tmp_path / "tripwire_scenarios.csv"
+    metadata = tmp_path / "dataset_metadata.json"
+
+    write_dataset(result, output, metadata)
+    loaded = json.loads(metadata.read_text(encoding="utf-8"))
+
+    assert loaded["severity_thresholds"]["CRITICAL"]["max_load_lost_percent"] is None
 
 
 def test_max_scenarios_limits_rows() -> None:

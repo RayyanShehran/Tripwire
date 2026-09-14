@@ -166,7 +166,10 @@ def write_dataset(
         metadata_path = output_path.with_name("dataset_metadata.json")
 
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata_path.write_text(json.dumps(result.metadata, indent=2), encoding="utf-8")
+    metadata_path.write_text(
+        json.dumps(result.metadata, allow_nan=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def summarize_dataset(result: DatasetGenerationResult) -> str:
@@ -242,7 +245,7 @@ def build_metadata(
         "component_types": list(component_types),
         "random_seed": seed,
         "max_scenarios": max_scenarios,
-        "severity_thresholds": SEVERITY_THRESHOLDS,
+        "severity_thresholds": _metadata_severity_thresholds(),
         "failed_simulation_count": len(failed_simulations),
         "failed_simulations": failed_simulations,
         "cascade_happened_definition": (
@@ -555,3 +558,13 @@ def _validate_component_types(component_types: tuple[str, ...]) -> None:
 
 def _round(value: float) -> float:
     return round(float(value), 4)
+
+
+def _metadata_severity_thresholds() -> dict[str, dict[str, float | None]]:
+    return {
+        label: {
+            "min_load_lost_percent": lower,
+            "max_load_lost_percent": upper if isfinite(upper) else None,
+        }
+        for label, (lower, upper) in SEVERITY_THRESHOLDS.items()
+    }
