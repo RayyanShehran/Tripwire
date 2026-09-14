@@ -12,8 +12,9 @@ The frontend is a Next.js application written in TypeScript. It is responsible f
 - Sending deterministic cascade simulation requests to the backend.
 - Resetting the current scenario.
 - Displaying solved operating metrics returned by the backend.
-- Displaying the final cascade state and summary metrics.
-- Displaying future cascade timeline playback and decision-support metrics.
+- Displaying cascade timeline playback from the stored backend response.
+- Displaying current-step cascade metrics and final summary metrics.
+- Displaying future decision-support metrics.
 - Calling the FastAPI backend through a configurable API base URL.
 
 Core frontend packages:
@@ -112,7 +113,16 @@ grid
 metrics
 ```
 
-This prepares the backend for future timeline playback. The current frontend intentionally displays only the final cascade state and summary.
+The frontend stores the complete cascade response and changes displayed React Flow data by selecting a saved step. Timeline navigation and playback do not request a new backend simulation.
+
+Current playback behavior:
+
+- Timeline item click jumps to that saved grid state.
+- Previous and Next move one step at a time.
+- Play/Pause advances through saved steps at 0.5x, 1x, or 2x speed.
+- Playback stops automatically on the final step.
+- Return to Baseline clears cascade state and reloads the healthy grid.
+- Newly failed components and currently overloaded lines are visually emphasized for the active step.
 
 ## API Boundary
 

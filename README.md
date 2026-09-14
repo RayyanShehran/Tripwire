@@ -4,7 +4,7 @@ Tripwire is a web-based power-grid cascading failure simulation and decision-sup
 
 This repository currently contains the first working local version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, a deterministic cascading-failure engine, and a Next.js frontend that renders the network with React Flow.
 
-Machine-learning prediction, mitigation recommendation features, and cascade timeline playback are intentionally not implemented yet.
+Machine-learning prediction and mitigation recommendation features are intentionally not implemented yet.
 
 ## Project Structure
 
@@ -19,7 +19,7 @@ tripwire/
 
 Tripwire is split into a browser frontend and a Python API backend.
 
-- The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, single-component failure controls, and a final-state cascade action.
+- The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, single-component failure controls, and cascade timeline playback.
 - The backend exposes API endpoints for health checks, the solved grid state, one-off component failure simulation, deterministic cascade simulation, and scenario reset.
 - The frontend communicates with the backend through the `NEXT_PUBLIC_API_BASE_URL` environment variable.
 
@@ -137,7 +137,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/cascade `
   -Body '{"component_type":"line","component_id":"line-101","max_steps":20}'
 ```
 
-The cascade engine stores every simulated step in the response, but the current frontend only displays the final cascade state and summary metrics.
+The cascade engine stores every simulated step in the response. The frontend keeps that response in memory and lets the user step through it without requesting a new backend simulation.
 
 ### Frontend
 
@@ -187,12 +187,14 @@ Implemented:
 - Generator, bus, load, and transmission-line display.
 - Selection details panel.
 - Basic failure and reset controls.
-- Basic cascade action showing the final cascade state and summary metrics.
+- Cascade timeline with clickable steps.
+- Previous, play/pause, next, and speed controls.
+- Current-step cascade metrics and final cascade summary.
+- Current-step emphasis for newly failed components and overloaded lines.
 - Backend and frontend ignore files.
 
 Not implemented yet:
 
-- Step-by-step cascade playback.
 - Interactive grid editor.
 - Machine-learning prediction.
 - Mitigation recommendation engine.
