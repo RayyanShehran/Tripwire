@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.main import app
-from app.simulation.scenario import GridScenario
+from app.simulation.scenario import ComponentFailure, GridScenario
 from app.simulation.grid import (
     GridComponentNotFoundError,
     GridConvergenceError,
@@ -260,6 +260,27 @@ def test_post_api_failure_validates_request_shape() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_grid_scenario_does_not_duplicate_existing_failure() -> None:
+    scenario = GridScenario()
+    failure = ComponentFailure(component_type="line", component_id="line-101")
+
+    scenario.apply_failure(failure)
+    scenario.apply_failure(failure)
+
+    assert scenario.failures == [failure]
+
+
+def test_grid_scenario_rejects_invalid_failure_without_persisting_it() -> None:
+    scenario = GridScenario()
+
+    with pytest.raises(GridComponentNotFoundError):
+        scenario.apply_failure(ComponentFailure(component_type="line", component_id="bad-id"))
+
+    assert scenario.failures == []
+    response = scenario.current_grid()
+    assert response["metrics"]["unserved_load_mw"] == pytest.approx(0.0)
 
 
 def test_get_api_grid_handles_convergence_failure(monkeypatch: pytest.MonkeyPatch) -> None:
