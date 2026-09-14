@@ -1,6 +1,4 @@
-from typing import Annotated
-
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -9,9 +7,9 @@ from app.simulation.grid import (
     GridComponentNotFoundError,
     GridComponentType,
     GridConvergenceError,
-    get_grid_response,
 )
-from app.simulation.scenario import ComponentFailure, GridScenario
+from app.simulation.scenario import ComponentFailure, get_baseline_grid
+from app.simulation.scenario import simulate_failure as simulate_single_failure
 
 app = FastAPI(
     title="Tripwire API",
@@ -31,9 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-scenario = GridScenario()
-
-
 class FailureRequest(BaseModel):
     component_type: GridComponentType
     component_id: str = Field(..., min_length=1)
@@ -44,31 +39,23 @@ class CascadeRequest(FailureRequest):
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
+def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.get("/api/grid")
-async def get_grid(
-    outage_type: Annotated[GridComponentType | None, Query()] = None,
-    outage_id: Annotated[str | None, Query()] = None,
-) -> dict:
+def get_grid() -> dict:
     try:
-        return get_grid_response(outage_type=outage_type, outage_id=outage_id)
-    except GridComponentNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return get_baseline_grid()
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/failure")
-async def simulate_failure(request: FailureRequest) -> dict:
+def simulate_failure(request: FailureRequest) -> dict:
     try:
-        return scenario.apply_failure(
-            ComponentFailure(
-                component_type=request.component_type,
-                component_id=request.component_id,
-            )
+        return simulate_single_failure(
+            ComponentFailure(request.component_type, request.component_id)
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -77,15 +64,15 @@ async def simulate_failure(request: FailureRequest) -> dict:
 
 
 @app.post("/api/reset")
-async def reset_scenario() -> dict:
+def reset_scenario() -> dict:
     try:
-        return scenario.reset()
+        return get_baseline_grid()
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/cascade")
-async def run_cascade(request: CascadeRequest) -> dict:
+def run_cascade(request: CascadeRequest) -> dict:
     try:
         return simulate_cascade(
             component_type=request.component_type,

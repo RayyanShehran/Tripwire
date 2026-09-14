@@ -6,9 +6,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main
 from app.main import app
-from app.simulation.scenario import ComponentFailure, GridScenario
+from app import main
+from app.simulation.scenario import ComponentFailure, get_baseline_grid, simulate_failure
 from app.simulation.grid import (
     GridComponentNotFoundError,
     GridConvergenceError,
@@ -18,11 +18,6 @@ from app.simulation.grid import (
     run_power_flow,
     serialize_grid_state,
 )
-
-
-@pytest.fixture(autouse=True)
-def reset_api_scenario() -> None:
-    main.scenario = GridScenario()
 
 
 def test_create_test_grid_contains_expected_components() -> None:
@@ -150,22 +145,20 @@ def test_get_api_grid_response() -> None:
     assert payload["metrics"]["served_load_mw"] == pytest.approx(400.0)
 
 
-def test_get_api_grid_supports_single_outage_query() -> None:
+def test_get_api_grid_ignores_previous_failure_and_returns_baseline() -> None:
     client = TestClient(app)
 
-    response = client.get("/api/grid", params={"outage_type": "bus", "outage_id": "bus-3"})
+    failure_response = client.post(
+        "/api/failure",
+        json={"component_type": "line", "component_id": "line-101"},
+    )
+    grid_response = client.get("/api/grid")
 
-    assert response.status_code == 200
-    assert response.json()["metrics"]["unserved_load_mw"] == pytest.approx(110.0)
-
-
-def test_get_api_grid_returns_404_for_invalid_component() -> None:
-    client = TestClient(app)
-
-    response = client.get("/api/grid", params={"outage_type": "line", "outage_id": "bad-id"})
-
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Unknown line: bad-id"
+    assert failure_response.status_code == 200
+    assert grid_response.status_code == 200
+    payload = grid_response.json()
+    assert {node["status"] for node in payload["nodes"]} == {"healthy"}
+    assert {line["status"] for line in payload["lines"]} == {"healthy"}
 
 
 def test_post_api_failure_applies_component_failure() -> None:
@@ -178,12 +171,14 @@ def test_post_api_failure_applies_component_failure() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    line = next(line for line in payload["lines"] if line["id"] == "line-101")
+    assert payload["status"] == "solved"
+    assert payload["termination_reason"] == "solved"
+    line = next(line for line in payload["grid"]["lines"] if line["id"] == "line-101")
     assert line["status"] == "failed"
     assert line["loading_percent"] is None
 
 
-def test_post_api_failure_preserves_existing_failures() -> None:
+def test_post_api_failure_requests_are_independent() -> None:
     client = TestClient(app)
 
     first_response = client.post(
@@ -192,17 +187,14 @@ def test_post_api_failure_preserves_existing_failures() -> None:
     )
     second_response = client.post(
         "/api/failure",
-        json={"component_type": "bus", "component_id": "bus-3"},
+        json={"component_type": "line", "component_id": "line-102"},
     )
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    payload = second_response.json()
-    line = next(line for line in payload["lines"] if line["id"] == "line-101")
-    nodes_by_id = {node["id"]: node for node in payload["nodes"]}
-    assert line["status"] == "failed"
-    assert nodes_by_id["bus-3"]["status"] == "failed"
-    assert payload["metrics"]["unserved_load_mw"] == pytest.approx(110.0)
+    lines = {line["id"]: line for line in second_response.json()["grid"]["lines"]}
+    assert lines["line-101"]["status"] == "healthy"
+    assert lines["line-102"]["status"] == "failed"
 
 
 def test_post_api_failure_is_idempotent_for_same_component() -> None:
@@ -219,7 +211,7 @@ def test_post_api_failure_is_idempotent_for_same_component() -> None:
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert first_response.json()["metrics"] == second_response.json()["metrics"]
+    assert first_response.json() == second_response.json()
 
 
 def test_post_api_reset_restores_baseline_grid() -> None:
@@ -243,12 +235,12 @@ def test_post_api_failure_rejects_invalid_component_without_changing_scenario() 
         "/api/failure",
         json={"component_type": "line", "component_id": "bad-id"},
     )
-    reset_response = client.post("/api/reset")
+    grid_response = client.get("/api/grid")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Unknown line: bad-id"
-    assert reset_response.status_code == 200
-    assert reset_response.json()["metrics"]["unserved_load_mw"] == pytest.approx(0.0)
+    assert grid_response.status_code == 200
+    assert grid_response.json()["metrics"]["unserved_load_mw"] == pytest.approx(0.0)
 
 
 def test_post_api_failure_validates_request_shape() -> None:
@@ -262,32 +254,31 @@ def test_post_api_failure_validates_request_shape() -> None:
     assert response.status_code == 422
 
 
-def test_grid_scenario_does_not_duplicate_existing_failure() -> None:
-    scenario = GridScenario()
-    failure = ComponentFailure(component_type="line", component_id="line-101")
+def test_simulate_failure_is_stateless_for_repeated_failures() -> None:
+    first = simulate_failure(ComponentFailure("line", "line-101"))
+    second = simulate_failure(ComponentFailure("line", "line-102"))
 
-    scenario.apply_failure(failure)
-    scenario.apply_failure(failure)
+    first_lines = {line["id"]: line for line in first["grid"]["lines"]}
+    second_lines = {line["id"]: line for line in second["grid"]["lines"]}
+    assert first_lines["line-101"]["status"] == "failed"
+    assert first_lines["line-102"]["status"] == "healthy"
+    assert second_lines["line-101"]["status"] == "healthy"
+    assert second_lines["line-102"]["status"] == "failed"
 
-    assert scenario.failures == [failure]
 
-
-def test_grid_scenario_rejects_invalid_failure_without_persisting_it() -> None:
-    scenario = GridScenario()
-
+def test_stateless_failure_rejects_invalid_component_without_state() -> None:
     with pytest.raises(GridComponentNotFoundError):
-        scenario.apply_failure(ComponentFailure(component_type="line", component_id="bad-id"))
+        simulate_failure(ComponentFailure("line", "bad-id"))
 
-    assert scenario.failures == []
-    response = scenario.current_grid()
+    response = get_baseline_grid()
     assert response["metrics"]["unserved_load_mw"] == pytest.approx(0.0)
 
 
 def test_get_api_grid_handles_convergence_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    def raise_convergence_error(**_: Any) -> None:
+    def raise_convergence_error() -> None:
         raise GridConvergenceError("Power flow did not converge")
 
-    monkeypatch.setattr(main, "get_grid_response", raise_convergence_error)
+    monkeypatch.setattr(main, "get_baseline_grid", raise_convergence_error)
     client = TestClient(app)
 
     response = client.get("/api/grid")
