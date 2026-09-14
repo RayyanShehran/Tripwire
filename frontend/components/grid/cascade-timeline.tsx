@@ -177,19 +177,21 @@ function TimelineItem({
 }
 
 function describeStep(step: ApiCascadeStep) {
+  const events: string[] = [];
+
   if (step.newly_failed_components.length > 0) {
-    return `Failed: ${step.newly_failed_components
+    events.push(`Failed: ${step.newly_failed_components
       .map((component) => component.component_id)
-      .join(", ")}`;
+      .join(", ")}`);
   }
 
   if (step.overloaded_lines.length > 0) {
-    return `Overloaded: ${step.overloaded_lines
+    events.push(`Overloaded: ${step.overloaded_lines
       .map((line) => line.component_id)
-      .join(", ")}`;
+      .join(", ")}`);
   }
 
-  return "Network stabilized";
+  return events.length > 0 ? events.join("; ") : "Network stabilized";
 }
 
 function loadLostPercent(step: ApiCascadeStep) {

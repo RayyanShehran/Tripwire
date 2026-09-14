@@ -330,18 +330,17 @@ export function GridVisualization() {
       return;
     }
 
-    setIsPlaying((playing) => {
-      if (playing) {
-        return false;
-      }
+    if (isPlaying) {
+      setIsPlaying(false);
+      return;
+    }
 
-      if (currentStepIndex >= cascadeResult.steps.length - 1) {
-        setCurrentStepIndex(0);
-      }
+    if (currentStepIndex >= cascadeResult.steps.length - 1) {
+      setCurrentStepIndex(0);
+    }
 
-      return true;
-    });
-  }, [cascadeResult, currentStepIndex]);
+    setIsPlaying(true);
+  }, [cascadeResult, currentStepIndex, isPlaying]);
 
   return (
     <ReactFlowProvider>
