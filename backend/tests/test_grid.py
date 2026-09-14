@@ -47,6 +47,9 @@ def test_grid_response_contains_expected_fields() -> None:
     assert response["metrics"]["total_demand_mw"] == pytest.approx(400.0)
     assert response["metrics"]["served_load_mw"] == pytest.approx(400.0)
     assert response["metrics"]["unserved_load_mw"] == pytest.approx(0.0)
+    assert response["metrics"]["load_lost_percent"] == pytest.approx(0.0)
+    assert response["metrics"]["failed_components"] == 0
+    assert response["metrics"]["failed_lines"] == 0
     assert response["metrics"]["total_generation_mw"] > response["metrics"]["served_load_mw"]
     assert response["metrics"]["max_line_loading_percent"] > 0
 
@@ -173,9 +176,12 @@ def test_post_api_failure_applies_component_failure() -> None:
     payload = response.json()
     assert payload["status"] == "solved"
     assert payload["termination_reason"] == "solved"
+    assert payload["metrics"]["failed_lines"] == 1
+    assert payload["metrics"]["load_lost_percent"] == pytest.approx(0.0)
     line = next(line for line in payload["grid"]["lines"] if line["id"] == "line-101")
     assert line["status"] == "failed"
     assert line["loading_percent"] is None
+    assert_no_nonfinite_numbers(payload)
 
 
 def test_post_api_failure_requests_are_independent() -> None:
@@ -195,6 +201,7 @@ def test_post_api_failure_requests_are_independent() -> None:
     lines = {line["id"]: line for line in second_response.json()["grid"]["lines"]}
     assert lines["line-101"]["status"] == "healthy"
     assert lines["line-102"]["status"] == "failed"
+    assert second_response.json()["metrics"]["failed_lines"] == 1
 
 
 def test_post_api_failure_is_idempotent_for_same_component() -> None:
@@ -226,6 +233,16 @@ def test_post_api_reset_restores_baseline_grid() -> None:
     assert {line["status"] for line in payload["lines"]} == {"healthy"}
     assert payload["metrics"]["served_load_mw"] == pytest.approx(400.0)
     assert payload["metrics"]["unserved_load_mw"] == pytest.approx(0.0)
+    assert payload == client.get("/api/grid").json()
+
+
+def test_get_api_reset_returns_baseline_grid() -> None:
+    client = TestClient(app)
+
+    response = client.get("/api/reset")
+
+    assert response.status_code == 200
+    assert response.json() == client.get("/api/grid").json()
 
 
 def test_post_api_failure_rejects_invalid_component_without_changing_scenario() -> None:
@@ -252,6 +269,40 @@ def test_post_api_failure_validates_request_shape() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_post_api_failure_of_slack_bus_returns_blackout_response() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/failure",
+        json={"component_type": "bus", "component_id": "bus-0"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "blackout"
+    assert payload["termination_reason"] == "no_slack_source"
+    assert payload["metrics"]["total_demand_mw"] == pytest.approx(400.0)
+    assert payload["metrics"]["served_load_mw"] == pytest.approx(0.0)
+    assert payload["metrics"]["unserved_load_mw"] == pytest.approx(400.0)
+    assert payload["metrics"]["load_lost_percent"] == pytest.approx(100.0)
+    assert_no_nonfinite_numbers(payload)
+
+
+def test_every_valid_scenario_balances_served_and_unserved_load() -> None:
+    scenarios = [
+        get_baseline_grid(),
+        simulate_failure(ComponentFailure("line", "line-101"))["grid"],
+        simulate_failure(ComponentFailure("bus", "bus-3"))["grid"],
+        simulate_failure(ComponentFailure("bus", "bus-0"))["grid"],
+    ]
+
+    for scenario in scenarios:
+        metrics = scenario["metrics"]
+        assert metrics["served_load_mw"] + metrics["unserved_load_mw"] == pytest.approx(
+            metrics["total_demand_mw"]
+        )
 
 
 def test_simulate_failure_is_stateless_for_repeated_failures() -> None:

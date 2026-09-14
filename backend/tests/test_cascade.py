@@ -162,6 +162,38 @@ def test_post_api_cascade_returns_cascade_response() -> None:
     assert payload["steps"]
 
 
+def test_post_api_cascade_is_deterministic_for_same_input() -> None:
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/cascade",
+        json={"component_type": "line", "component_id": "line-101"},
+    )
+    second = client.post(
+        "/api/cascade",
+        json={"component_type": "line", "component_id": "line-101"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+
+
+def test_post_api_cascade_slack_bus_blackout_returns_200() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/cascade",
+        json={"component_type": "bus", "component_id": "bus-0"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["termination_reason"] == "total_blackout"
+    assert payload["final_metrics"]["load_lost_percent"] == pytest.approx(100.0)
+    assert_no_nonfinite_numbers(payload)
+
+
 def test_post_api_cascade_validates_request() -> None:
     client = TestClient(app)
 
