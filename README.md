@@ -32,12 +32,12 @@ Current backend libraries:
 
 ## Dataset Pipeline
 
-Tripwire includes an offline dataset generator for future ML work. It is not exposed through the web API.
+Tripwire includes an offline dataset generator for future ML work. It is not exposed through the web API and it does not train a model yet.
 
 Pipeline:
 
 ```text
-pandapower simulation -> deterministic scenario generator -> cascade outcomes -> CSV dataset -> future ML training
+pandapower simulation -> configurable operating profiles -> deterministic cascade outcomes -> CSV dataset -> future ML training
 ```
 
 Generate the default dataset from `tripwire/backend`:
@@ -59,14 +59,40 @@ Useful options:
 .\.venv\Scripts\python.exe scripts\generate_dataset.py `
   --output data\generated\tripwire_scenarios.csv `
   --seed 42 `
-  --load-multipliers 0.8,0.9,1.0,1.1,1.2 `
+  --load-multipliers 1.0,1.15,1.25,1.35,1.5 `
+  --generation-multipliers 0.8,0.9,1.0,1.1 `
+  --line-rating-multipliers 0.6,0.5,0.45,0.4,0.38,0.35,0.32 `
   --component-types line,bus `
-  --max-scenarios 5000
+  --max-scenarios 3000
 ```
 
-Feature columns are pre-failure inputs only, including operating condition, grid loading, reserve margin, component loading/capacity, endpoint voltages, and topology features. Target columns are post-cascade outcomes, including cascade depth, failed components, unserved load, load lost percentage, termination reason, and severity label.
+Scenario generation varies load demand, generator availability, generator dispatch profile, line thermal-rating stress, and initial component failure independently. The healthy application baseline is not changed; dataset scenarios may intentionally represent stressed operating conditions.
+
+Feature columns are pre-failure inputs only, including operating condition, available generation capacity, reserve margin, grid loading, component loading/capacity, endpoint voltages, endpoint load/generation context, and topology features. Target columns are post-cascade outcomes, including cascade depth, failed components, unserved load, load lost percentage, termination reason, and severity label.
+
+`reserve_margin_mw` is computed as:
+
+```text
+available_generation_capacity_mw - total_demand_mw
+```
+
+`reserve_margin_percent` is computed as:
+
+```text
+reserve_margin_mw / total_demand_mw * 100
+```
+
+These reserve features use only pre-failure scenario configuration and demand, not post-failure solved generation.
 
 `cascade_happened` is defined as true only when at least one secondary failure occurs after the initial failure.
+
+Analyze the generated CSV:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\analyze_dataset.py
+```
+
+The diagnostics report dataset size, positive cascade rate, severity distribution, feature ranges, constant columns, imbalanced categorical values, missing values, non-finite values, and duplicate scenario IDs.
 
 ## Current Grid Model
 
@@ -261,6 +287,7 @@ Implemented:
 - Current-step cascade metrics and final cascade summary.
 - Current-step emphasis for newly failed components and overloaded lines.
 - Offline scenario dataset generation.
+- Dataset diagnostics script.
 - CSV and metadata output for future ML training.
 - Backend and frontend ignore files.
 

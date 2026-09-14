@@ -51,7 +51,8 @@ Grid logic lives under `backend/app/simulation/` instead of inside API route han
 - `grid.py` creates the sample grid, runs pandapower, applies component outages, detects supplied buses, assigns component status, and serializes API-safe JSON.
 - `cascade.py` runs deterministic cascading-failure simulations from one initial component failure.
 - `scenario.py` builds stateless single-failure scenarios from a fresh baseline and wraps solved or blackout results with scenario metadata.
-- `app/ml/dataset.py` generates machine-learning-ready scenario rows from pre-failure features and post-cascade targets.
+- `app/ml/dataset.py` generates machine-learning-ready scenario rows from configurable pre-failure operating profiles and post-cascade targets.
+- `scripts/analyze_dataset.py` reports data-quality diagnostics for a generated CSV without training a model.
 
 The current grid is a single-voltage 230 kV teaching network. This avoids invalid direct line connections across voltage levels while keeping the topology easy to inspect.
 
@@ -227,7 +228,7 @@ Flow:
 
 ```text
 healthy grid model
--> operating-condition perturbations
+-> independent operating-condition profiles
 -> initial failure candidates
 -> pre-failure feature extraction
 -> deterministic cascade simulation
@@ -247,14 +248,39 @@ Feature columns are limited to values known before the initial failure:
 ```text
 scenario metadata
 load multiplier
+generation availability multiplier
+generator dispatch profile
+line rating multiplier
 pre-failure demand and generation
+available generation capacity
 reserve margin
 pre-failure line loading statistics
 network component counts
 failed component pre-failure loading/capacity
+endpoint load/generation context
 endpoint voltage and degree
 NetworkX centrality/path features
 ```
+
+Operating profiles are configured per scenario and do not mutate global grid state. The current defaults intentionally include stressed dataset-only cases:
+
+```text
+load_multipliers = 1.0, 1.15, 1.25, 1.35, 1.5
+generation_multipliers = 0.8, 0.9, 1.0, 1.1
+line_rating_multipliers = 0.6, 0.5, 0.45, 0.4, 0.38, 0.35, 0.32
+dispatch_profiles = balanced, south_heavy, harbor_heavy, south_reduced
+```
+
+The application baseline returned by `GET /api/grid` remains healthy. Dataset line-rating stress is applied only inside generated scenario networks so positive cascade labels arise from actual simulated overloads and secondary trips.
+
+Reserve margin is a pre-failure feature:
+
+```text
+reserve_margin_mw = available_generation_capacity_mw - total_demand_mw
+reserve_margin_percent = reserve_margin_mw / total_demand_mw * 100
+```
+
+It is not calculated from solved post-failure generation.
 
 Target columns are post-cascade labels and outcomes:
 
@@ -283,4 +309,14 @@ HIGH: 20 <= load lost < 50%
 CRITICAL: load lost >= 50%
 ```
 
-The generator validates that scenario IDs are unique, required fields are present, numeric values are finite, and severity labels are known.
+The generator validates that scenario IDs are unique, required fields are present, numeric values are finite, impossible negative values are absent, load lost is between 0 and 100%, cascade depth is non-negative, served plus unserved load balances to demand, and severity labels are known.
+
+Dataset metadata includes schema version, git commit when available, grid version, cascade threshold, configured multipliers, dispatch profiles, seed, scenario count, positive rate, feature columns, target columns, failed/excluded scenario count, and generation timestamp.
+
+Diagnostics can be run with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\analyze_dataset.py
+```
+
+The diagnostics script prints dataset size, positive cascade rate, severity distribution, feature ranges, potential constant columns, highly imbalanced categorical values, missing/non-finite value counts, and duplicate count. It intentionally does not train a model.
