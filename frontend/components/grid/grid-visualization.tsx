@@ -25,6 +25,7 @@ import {
   toLineData,
   toNodeData,
   type ApiCascadeResponse,
+  type ApiCascadeStep,
   type ApiComponentType,
   type ApiGridResponse,
 } from "./api";
@@ -95,8 +96,8 @@ export function GridVisualization() {
   }, [edges, grid, nodes]);
 
   const applyGridResponse = useCallback(
-    (response: ApiGridResponse) => {
-      const nextFlowData = toFlowData(response);
+    (response: ApiGridResponse, step?: ApiCascadeStep) => {
+      const nextFlowData = toFlowData(response, step);
 
       setGrid(response);
       setNodes(nextFlowData.nodes);
@@ -151,7 +152,7 @@ export function GridVisualization() {
 
     const step = cascadeResult.steps[currentStepIndex];
     if (step) {
-      applyGridResponse(step.grid);
+      applyGridResponse(step.grid, step);
     }
   }, [applyGridResponse, cascadeResult, currentStepIndex]);
 
@@ -411,31 +412,49 @@ function StateMessage({ title, message }: { title: string; message: string }) {
   );
 }
 
-function toFlowData(grid: ApiGridResponse): { nodes: GridNode[]; edges: GridLine[] } {
+function toFlowData(
+  grid: ApiGridResponse,
+  step?: ApiCascadeStep,
+): { nodes: GridNode[]; edges: GridLine[] } {
   const busNodes = grid.nodes.filter((node) => node.type === "bus");
   const generatorNodes = grid.nodes.filter((node) => node.type === "generator");
   const loadNodes = grid.nodes.filter((node) => node.type === "load");
   const busPositions = layoutBusPositions(busNodes.map((node) => node.id));
   const attachmentCounts = new Map<string, number>();
+  const newlyFailedComponentIds = new Set(
+    step?.newly_failed_components.map((component) => component.component_id) ?? [],
+  );
+  const overloadedLineIds = new Set(
+    step?.overloaded_lines.map((line) => line.component_id) ?? [],
+  );
 
   const nodes: GridNode[] = [
     ...busNodes.map((node) => ({
       id: node.id,
       type: "bus" as const,
       position: busPositions.get(node.id) ?? { x: 0, y: 0 },
-      data: toNodeData(node),
+      data: {
+        ...toNodeData(node),
+        isNewlyFailed: newlyFailedComponentIds.has(node.id),
+      },
     })),
     ...generatorNodes.map((node) => ({
       id: node.id,
       type: "generator" as const,
       position: attachmentPosition(node.connected_bus_id ?? undefined, busPositions, attachmentCounts, -210),
-      data: toNodeData(node),
+      data: {
+        ...toNodeData(node),
+        isNewlyFailed: newlyFailedComponentIds.has(node.id),
+      },
     })),
     ...loadNodes.map((node) => ({
       id: node.id,
       type: "load" as const,
       position: attachmentPosition(node.connected_bus_id ?? undefined, busPositions, attachmentCounts, 210),
-      data: toNodeData(node),
+      data: {
+        ...toNodeData(node),
+        isNewlyFailed: newlyFailedComponentIds.has(node.id),
+      },
     })),
   ];
 
@@ -444,7 +463,11 @@ function toFlowData(grid: ApiGridResponse): { nodes: GridNode[]; edges: GridLine
     type: "transmissionLine" as const,
     source: line.source,
     target: line.target,
-    data: toLineData(line),
+    data: {
+      ...toLineData(line),
+      isCurrentlyOverloaded: overloadedLineIds.has(line.id),
+      isNewlyFailed: newlyFailedComponentIds.has(line.id),
+    },
   }));
 
   const attachmentEdges: GridLine[] = [...generatorNodes, ...loadNodes]
@@ -458,6 +481,7 @@ function toFlowData(grid: ApiGridResponse): { nodes: GridNode[]; edges: GridLine
         name: "Connection",
         loadingPercent: 0,
         capacityMw: 0,
+        isNewlyFailed: newlyFailedComponentIds.has(node.id),
         status: toDisplayConnectionStatus(node.status),
         },
       selectable: false,

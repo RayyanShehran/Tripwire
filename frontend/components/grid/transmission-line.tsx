@@ -35,6 +35,7 @@ export function TransmissionLine({
   });
   const status = data?.status ?? "Healthy";
   const styles = statusStyles[status];
+  const isEmphasized = data?.isNewlyFailed || data?.isCurrentlyOverloaded;
 
   return (
     <>
@@ -44,14 +45,18 @@ export function TransmissionLine({
         path={edgePath}
         style={{
           stroke: styles.edge,
-          strokeWidth: status === "Failed" ? 2 : 3,
+          strokeWidth: isEmphasized ? 5 : status === "Failed" ? 2 : 3,
           strokeDasharray: status === "Failed" ? "8 6" : undefined,
         }}
       />
       {data && data.capacityMw !== null && data.capacityMw > 0 ? (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan pointer-events-none absolute rounded border border-neutral-200 bg-white px-2 py-1 text-[10px] font-semibold text-neutral-700 shadow-sm"
+            className={`nodrag nopan pointer-events-none absolute rounded border bg-white px-2 py-1 text-[10px] font-semibold shadow-sm ${
+              isEmphasized
+                ? "border-red-300 text-red-800"
+                : "border-neutral-200 text-neutral-700"
+            }`}
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             }}

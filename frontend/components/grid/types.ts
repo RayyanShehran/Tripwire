@@ -11,6 +11,7 @@ export type GridNodeData = {
   loadMw?: number;
   voltagePu: number | null;
   connectedBusId?: string;
+  isNewlyFailed?: boolean;
 };
 
 export type GridLineData = {
@@ -18,6 +19,8 @@ export type GridLineData = {
   loadingPercent: number | null;
   capacityMw: number | null;
   status: GridStatus;
+  isCurrentlyOverloaded?: boolean;
+  isNewlyFailed?: boolean;
 };
 
 export type GridNode = Node<GridNodeData, "generator" | "bus" | "load">;

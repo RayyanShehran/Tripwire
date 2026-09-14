@@ -20,7 +20,9 @@ function NodeShell({
 
   return (
     <div
-      className={`min-w-44 rounded border-2 ${styles.border} bg-white px-3 py-2 shadow-sm`}
+      className={`min-w-44 rounded border-2 ${styles.border} bg-white px-3 py-2 shadow-sm ${
+        data.isNewlyFailed ? "ring-2 ring-red-700 ring-offset-2" : ""
+      }`}
     >
       <Handle className="!h-2.5 !w-2.5 !bg-neutral-500" position={Position.Left} type="target" />
       <Handle className="!h-2.5 !w-2.5 !bg-neutral-500" position={Position.Right} type="source" />
