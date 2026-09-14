@@ -6,7 +6,7 @@ import json
 import random
 import subprocess
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import isfinite
 from pathlib import Path
@@ -25,7 +25,6 @@ from app.simulation.cascade import (
 from app.simulation.grid import (
     GridComponentType,
     GridConvergenceError,
-    apply_component_outage,
     create_test_grid,
     run_power_flow,
     serialize_grid_state,
@@ -283,12 +282,15 @@ def analyze_dataset(dataframe: pd.DataFrame) -> dict[str, Any]:
     numeric_columns = dataframe.select_dtypes(include=["number"]).columns.tolist()
     categorical_columns = dataframe.select_dtypes(exclude=["number"]).columns.tolist()
 
+    numeric_feature_columns = [
+        column for column in FEATURE_COLUMNS if column in numeric_columns
+    ]
     feature_ranges = {
         column: {
             "min": _round(dataframe[column].min()),
             "max": _round(dataframe[column].max()),
         }
-        for column in numeric_columns
+        for column in numeric_feature_columns
         if not dataframe.empty
     }
     constant_columns = [
