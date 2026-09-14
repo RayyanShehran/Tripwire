@@ -29,7 +29,10 @@ export type ApiGridMetrics = {
   total_demand_mw: number;
   served_load_mw: number;
   unserved_load_mw: number;
+  load_lost_percent: number;
   total_generation_mw: number;
+  failed_components: number;
+  failed_lines: number;
   max_line_loading_percent: number;
 };
 
@@ -44,11 +47,23 @@ export type ApiCascadeFinalMetrics = {
   served_load_mw: number;
   unserved_load_mw: number;
   load_lost_percent: number;
+  total_generation_mw: number;
   failed_components: number;
   failed_lines: number;
   cascade_depth: number;
   peak_line_loading_percent: number;
   overload_events: number;
+};
+
+export type ApiFailureResponse = {
+  status: "solved" | "blackout";
+  termination_reason: "solved" | "no_slack_source" | "total_blackout";
+  initial_failure: {
+    component_type: ApiComponentType;
+    component_id: string;
+  };
+  grid: ApiGridResponse;
+  metrics: ApiGridMetrics;
 };
 
 export type ApiCascadeStep = {
@@ -126,7 +141,8 @@ export async function simulateFailure(
     throw new Error(`Failure API returned ${response.status}`);
   }
 
-  return (await response.json()) as ApiGridResponse;
+  const payload = (await response.json()) as ApiFailureResponse;
+  return payload.grid;
 }
 
 export async function resetScenario(apiBaseUrl: string): Promise<ApiGridResponse> {
