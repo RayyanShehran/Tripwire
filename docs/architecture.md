@@ -140,7 +140,7 @@ Current playback behavior:
 
 ## API Boundary
 
-The frontend reads `NEXT_PUBLIC_API_BASE_URL` and uses it for API requests. During local development, this should point to:
+The frontend reads `NEXT_PUBLIC_API_URL` and uses it for API requests. During local development, this should point to:
 
 ```text
 http://127.0.0.1:8000
@@ -512,12 +512,12 @@ Backend runtime configuration is environment-driven:
 ```text
 ALLOWED_ORIGINS
 ALLOW_ORIGIN_REGEX
-MODEL_DIR
-DATA_DIR
+MODEL_PATH
+DATA_PATH
 LOG_LEVEL
 ```
 
-Development defaults allow localhost frontend origins. Production should set explicit allowed frontend origins and should not use wildcard CORS with credentials.
+Development defaults allow localhost frontend origins. `MODEL_PATH` and `DATA_PATH` are the preferred deployment names; `MODEL_DIR` and `DATA_DIR` remain supported for compatibility. Production should set explicit allowed frontend origins and should not use wildcard CORS with credentials.
 
 The repository includes GitHub Actions CI for:
 

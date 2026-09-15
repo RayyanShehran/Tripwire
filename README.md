@@ -6,6 +6,14 @@ This repository currently contains the first working local version of Tripwire. 
 
 Tripwire remains a university/demo project; its results are based on synthetic simulation data.
 
+## Live Demo
+
+Frontend URL: not deployed yet.
+
+API URL: not deployed yet.
+
+Deployment instructions are in `docs/deployment.md`.
+
 ## Project Structure
 
 ```text
@@ -23,7 +31,7 @@ Tripwire is split into a browser frontend and a Python API backend.
 - The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, single-component failure controls, and cascade timeline playback.
 - The backend exposes stateless API endpoints for health checks, the solved baseline grid, one-off component failure simulation, deterministic cascade simulation, baseline reset, and synthetic-scenario ML risk prediction.
 - The backend recommends mitigation actions by simulating bounded intervention candidates and ranking their actual simulated outcomes.
-- The frontend communicates with the backend through the `NEXT_PUBLIC_API_BASE_URL` environment variable.
+- The frontend communicates with the backend through the `NEXT_PUBLIC_API_URL` environment variable.
 
 Current backend libraries:
 
@@ -234,8 +242,8 @@ Optional backend environment settings are documented in `backend/.env.example`:
 ```text
 ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ALLOW_ORIGIN_REGEX=http://(localhost|127\.0\.0\.1):30\d{2}
-MODEL_DIR=C:\Projects\Tripwire\Tripwire\backend\models
-DATA_DIR=C:\Projects\Tripwire\Tripwire\backend\data
+MODEL_PATH=C:\Projects\Tripwire\Tripwire\backend\models
+DATA_PATH=C:\Projects\Tripwire\Tripwire\backend\data
 LOG_LEVEL=INFO
 ```
 
@@ -358,7 +366,7 @@ Then open:
 http://localhost:3000
 ```
 
-If port 3000 is busy, Next.js may choose another localhost port. The frontend expects the backend at `http://127.0.0.1:8000` unless `NEXT_PUBLIC_API_BASE_URL` is changed.
+If port 3000 is busy, Next.js may choose another localhost port. The frontend expects the backend URL to be configured with `NEXT_PUBLIC_API_URL`.
 
 If model artifacts are absent, regenerate the dataset and retrain:
 
@@ -425,10 +433,10 @@ pnpm dev
 
 The frontend runs at `http://localhost:3000` by default and expects the backend at `http://127.0.0.1:8000`.
 
-To override the backend URL, edit `.env.local`:
+To configure the backend URL, create `.env.local` from `frontend/.env.example`:
 
 ```text
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 ```
 
 ## Development Commands
