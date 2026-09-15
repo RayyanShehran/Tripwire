@@ -1,0 +1,230 @@
+{
+  "model_version": "tripwire-ml-v1",
+  "training_timestamp": "2026-09-15T12:43:31.880900+00:00",
+  "dataset_path": "C:\\Projects\\Tripwire\\Tripwire\\backend\\data\\generated\\tripwire_scenarios.csv",
+  "dataset_row_count": 3000,
+  "git_commit": "ce61b21",
+  "feature_columns": [
+    "component_type",
+    "component_id",
+    "dispatch_profile",
+    "load_multiplier",
+    "generation_multiplier",
+    "line_rating_multiplier",
+    "random_seed",
+    "total_demand_mw",
+    "available_generation_capacity_mw",
+    "reserve_margin_mw",
+    "reserve_margin_percent",
+    "total_generation_mw",
+    "gen_south_dispatch_mw",
+    "gen_harbor_dispatch_mw",
+    "max_line_loading_percent",
+    "mean_line_loading_percent",
+    "p95_line_loading_percent",
+    "number_of_stressed_lines",
+    "number_of_overloaded_lines",
+    "number_of_buses",
+    "number_of_lines",
+    "number_of_generators",
+    "number_of_loads",
+    "pre_failure_loading_percent",
+    "capacity_mw",
+    "source_bus_voltage",
+    "target_bus_voltage",
+    "source_degree",
+    "target_degree",
+    "component_betweenness_centrality",
+    "endpoint_degree_sum",
+    "endpoint_shortest_path_length",
+    "source_bus_load_mw",
+    "target_bus_load_mw",
+    "source_bus_generation_mw",
+    "target_bus_generation_mw"
+  ],
+  "categorical_features": [
+    "component_type",
+    "component_id",
+    "dispatch_profile"
+  ],
+  "numeric_features": [
+    "load_multiplier",
+    "generation_multiplier",
+    "line_rating_multiplier",
+    "random_seed",
+    "total_demand_mw",
+    "available_generation_capacity_mw",
+    "reserve_margin_mw",
+    "reserve_margin_percent",
+    "total_generation_mw",
+    "gen_south_dispatch_mw",
+    "gen_harbor_dispatch_mw",
+    "max_line_loading_percent",
+    "mean_line_loading_percent",
+    "p95_line_loading_percent",
+    "number_of_stressed_lines",
+    "number_of_overloaded_lines",
+    "number_of_buses",
+    "number_of_lines",
+    "number_of_generators",
+    "number_of_loads",
+    "pre_failure_loading_percent",
+    "capacity_mw",
+    "source_bus_voltage",
+    "target_bus_voltage",
+    "source_degree",
+    "target_degree",
+    "component_betweenness_centrality",
+    "endpoint_degree_sum",
+    "endpoint_shortest_path_length",
+    "source_bus_load_mw",
+    "target_bus_load_mw",
+    "source_bus_generation_mw",
+    "target_bus_generation_mw"
+  ],
+  "classification_target": "cascade_happened",
+  "regression_target": "load_lost_percent",
+  "train_test_strategy": "group_shuffle_split_by_initial_component",
+  "random_seed": 42,
+  "class_distribution": {
+    "cascade_false": 2291,
+    "cascade_true": 709
+  },
+  "classifier_model": "logistic_regression",
+  "regressor_model": "random_forest_regressor",
+  "classifier_metrics": {
+    "accuracy": 0.8608,
+    "precision": 0.6569,
+    "recall": 0.8771,
+    "f1": 0.7512,
+    "roc_auc": 0.9132,
+    "confusion_matrix": [
+      [
+        486,
+        82
+      ],
+      [
+        22,
+        157
+      ]
+    ]
+  },
+  "regressor_metrics": {
+    "mae": 23.2752,
+    "rmse": 41.495,
+    "r2": 0.2961,
+    "severe_blackout_mae": 45.1114
+  },
+  "all_classifier_metrics": {
+    "logistic_regression": {
+      "accuracy": 0.8608,
+      "precision": 0.6569,
+      "recall": 0.8771,
+      "f1": 0.7512,
+      "roc_auc": 0.9132,
+      "confusion_matrix": [
+        [
+          486,
+          82
+        ],
+        [
+          22,
+          157
+        ]
+      ]
+    },
+    "random_forest_classifier": {
+      "accuracy": 0.7617,
+      "precision": 0.5019,
+      "recall": 0.7374,
+      "f1": 0.5973,
+      "roc_auc": 0.8623,
+      "confusion_matrix": [
+        [
+          437,
+          131
+        ],
+        [
+          47,
+          132
+        ]
+      ]
+    }
+  },
+  "all_regressor_metrics": {
+    "ridge_regression": {
+      "mae": 28.5566,
+      "rmse": 38.3972,
+      "r2": 0.3973,
+      "severe_blackout_mae": 36.306
+    },
+    "random_forest_regressor": {
+      "mae": 23.2752,
+      "rmse": 41.495,
+      "r2": 0.2961,
+      "severe_blackout_mae": 45.1114
+    }
+  },
+  "classifier_top_features": [],
+  "regressor_top_features": [
+    {
+      "feature": "max_line_loading_percent",
+      "importance": 0.2501
+    },
+    {
+      "feature": "p95_line_loading_percent",
+      "importance": 0.1861
+    },
+    {
+      "feature": "source_bus_voltage",
+      "importance": 0.1348
+    },
+    {
+      "feature": "mean_line_loading_percent",
+      "importance": 0.1051
+    },
+    {
+      "feature": "component_id=bus-4",
+      "importance": 0.0834
+    },
+    {
+      "feature": "pre_failure_loading_percent",
+      "importance": 0.0482
+    },
+    {
+      "feature": "capacity_mw",
+      "importance": 0.0342
+    },
+    {
+      "feature": "target_bus_voltage",
+      "importance": 0.0288
+    },
+    {
+      "feature": "source_bus_load_mw",
+      "importance": 0.0193
+    },
+    {
+      "feature": "component_id=line-201",
+      "importance": 0.0158
+    },
+    {
+      "feature": "target_bus_load_mw",
+      "importance": 0.0133
+    },
+    {
+      "feature": "source_bus_generation_mw",
+      "importance": 0.0093
+    }
+  ],
+  "package_versions": {
+    "pandas": "2.3.3",
+    "numpy": "2.4.6",
+    "scikit_learn": "1.9.0",
+    "joblib": "1.6.0"
+  },
+  "selection_rationale": {
+    "classifier": "highest F1 score, then ROC AUC and recall",
+    "regressor": "lowest MAE on the held-out split"
+  },
+  "limitations": "Models are trained only on Tripwire's synthetic simulation scenarios and should not be interpreted as real-world grid reliability models."
+}
