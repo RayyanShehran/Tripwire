@@ -13,9 +13,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 type InfoPanelProps = {
   cascadeSummary: CascadeSummary | null;
-  isMutating: boolean;
-  isPredicting: boolean;
-  isFindingMitigation: boolean;
+  activeAction: ActiveAction;
   mitigation: MitigationResult | null;
   onFindMitigation: () => void;
   onOperatingProfileChange: (profile: OperatingProfileKey) => void;
@@ -37,6 +35,14 @@ export type CascadeSummary = {
 };
 
 export type OperatingProfileKey = "baseline" | "stressed" | "severe";
+export type ActiveAction =
+  | null
+  | "predict"
+  | "failure"
+  | "cascade"
+  | "mitigation"
+  | "reset"
+  | "recommendation";
 
 export type RiskPrediction = {
   cascadeProbability: number;
@@ -80,10 +86,8 @@ export type MitigationResult = {
 };
 
 export function InfoPanel({
+  activeAction,
   cascadeSummary,
-  isMutating,
-  isPredicting,
-  isFindingMitigation,
   mitigation,
   onFindMitigation,
   onOperatingProfileChange,
@@ -109,9 +113,7 @@ export function InfoPanel({
           canRunCascade={false}
           canPredict={false}
           canFindMitigation={false}
-          isMutating={isMutating}
-          isPredicting={isPredicting}
-          isFindingMitigation={isFindingMitigation}
+          activeAction={activeAction}
           onFindMitigation={onFindMitigation}
           onOperatingProfileChange={onOperatingProfileChange}
           onPredictRisk={onPredictRisk}
@@ -157,9 +159,7 @@ export function InfoPanel({
           canRunCascade
           canPredict
           canFindMitigation
-          isMutating={isMutating}
-          isPredicting={isPredicting}
-          isFindingMitigation={isFindingMitigation}
+          activeAction={activeAction}
           onFindMitigation={onFindMitigation}
           onOperatingProfileChange={onOperatingProfileChange}
           onPredictRisk={onPredictRisk}
@@ -203,9 +203,7 @@ export function InfoPanel({
         canRunCascade
         canPredict
         canFindMitigation
-        isMutating={isMutating}
-        isPredicting={isPredicting}
-        isFindingMitigation={isFindingMitigation}
+        activeAction={activeAction}
         onFindMitigation={onFindMitigation}
         onOperatingProfileChange={onOperatingProfileChange}
         onPredictRisk={onPredictRisk}
@@ -233,9 +231,7 @@ function PanelActions({
   canSimulate,
   canPredict,
   canFindMitigation,
-  isMutating,
-  isPredicting,
-  isFindingMitigation,
+  activeAction,
   onFindMitigation,
   onOperatingProfileChange,
   onPredictRisk,
@@ -248,9 +244,7 @@ function PanelActions({
   canSimulate: boolean;
   canPredict: boolean;
   canFindMitigation: boolean;
-  isMutating: boolean;
-  isPredicting: boolean;
-  isFindingMitigation: boolean;
+  activeAction: ActiveAction;
   onFindMitigation: () => void;
   onOperatingProfileChange: (profile: OperatingProfileKey) => void;
   onPredictRisk: () => void;
@@ -275,43 +269,43 @@ function PanelActions({
       </label>
       <button
         className="rounded border border-red-700 bg-white px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
-        disabled={!canPredict || isMutating || isPredicting}
+        disabled={!canPredict || activeAction !== null}
         onClick={onPredictRisk}
         type="button"
       >
-        {isPredicting ? "Predicting..." : "Predict Risk"}
+        {activeAction === "predict" ? "Predicting Risk..." : "Predict Risk"}
       </button>
       <button
         className="rounded border border-neutral-950 bg-white px-3 py-2 text-sm font-semibold text-neutral-950 disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
-        disabled={!canFindMitigation || isMutating || isFindingMitigation}
+        disabled={!canFindMitigation || activeAction !== null}
         onClick={onFindMitigation}
         type="button"
       >
-        {isFindingMitigation ? "Finding..." : "Find Mitigation"}
+        {activeAction === "mitigation" ? "Finding Mitigation..." : "Find Mitigation"}
       </button>
       <button
         className="rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
-        disabled={!canSimulate || isMutating}
+        disabled={!canSimulate || activeAction !== null}
         onClick={onSimulateFailure}
         type="button"
       >
-        Simulate Failure
+        {activeAction === "failure" ? "Simulating Failure..." : "Simulate Failure"}
       </button>
       <button
         className="rounded bg-neutral-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
-        disabled={!canRunCascade || isMutating}
+        disabled={!canRunCascade || activeAction !== null}
         onClick={onRunCascade}
         type="button"
       >
-        Run Cascade
+        {activeAction === "cascade" ? "Running Cascade..." : "Run Cascade"}
       </button>
       <button
         className="rounded border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 disabled:cursor-not-allowed disabled:text-neutral-400"
-        disabled={isMutating}
+        disabled={activeAction !== null}
         onClick={onResetScenario}
         type="button"
       >
-        Return to Baseline
+        {activeAction === "reset" ? "Resetting..." : "Return to Baseline"}
       </button>
     </div>
   );

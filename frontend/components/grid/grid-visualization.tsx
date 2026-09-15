@@ -40,6 +40,7 @@ import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
 import type { GridLine, GridNode, SelectedGridElement } from "./types";
 import type {
+  ActiveAction,
   MitigationRecommendation,
   MitigationResult,
   OperatingProfileKey,
@@ -73,9 +74,7 @@ export function GridVisualization() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
-  const [isMutating, setIsMutating] = useState(false);
-  const [isPredicting, setIsPredicting] = useState(false);
-  const [isFindingMitigation, setIsFindingMitigation] = useState(false);
+  const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const flowData = useMemo(() => (grid ? toFlowData(grid) : { nodes: [], edges: [] }), [grid]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
@@ -89,16 +88,17 @@ export function GridVisualization() {
   );
   const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
 
-  const metrics = useMemo(() => {
+  const dashboardMetrics = useMemo(() => {
     if (currentCascadeStep) {
-      const loadLostPercent =
-        currentCascadeStep.metrics.total_demand_mw === 0
-          ? 0
-          : (currentCascadeStep.metrics.unserved_load_mw /
-              currentCascadeStep.metrics.total_demand_mw) *
-            100;
-
       return [
+        {
+          label: "System Status",
+          value: currentCascadeStep.metrics.load_lost_percent > 0 ? "Impacted" : "Stable",
+        },
+        {
+          label: "Total Demand",
+          value: `${currentCascadeStep.metrics.total_demand_mw.toFixed(1)} MW`,
+        },
         {
           label: "Served load",
           value: `${currentCascadeStep.metrics.served_load_mw.toFixed(1)} MW`,
@@ -109,7 +109,7 @@ export function GridVisualization() {
         },
         {
           label: "Load lost",
-          value: `${loadLostPercent.toFixed(1)}%`,
+          value: `${currentCascadeStep.metrics.load_lost_percent.toFixed(1)}%`,
         },
         {
           label: "Failed lines",
@@ -120,37 +120,39 @@ export function GridVisualization() {
           value: currentCascadeStep.metrics.failed_components.toString(),
         },
         {
+          label: "Cascade Depth",
+          value: cascadeResult?.cascade_depth.toString() ?? "0",
+        },
+        {
           label: "Max line loading",
           value: `${currentCascadeStep.metrics.max_line_loading_percent.toFixed(1)}%`,
         },
+        ...predictionMetrics(prediction),
       ];
     }
 
     if (grid) {
-      return {
-        failedLines: edges.filter((edge) => edge.data?.status === "Failed").length,
-        failedNodes: nodes.filter((node) => node.data.status === "Failed").length,
-        maxLineLoading: `${grid.metrics.max_line_loading_percent.toFixed(1)}%`,
-        totalDemand: `${grid.metrics.total_demand_mw.toFixed(1)} MW`,
-        totalGeneration: `${grid.metrics.total_generation_mw.toFixed(1)} MW`,
-        servedLoad: `${grid.metrics.served_load_mw.toFixed(1)} MW`,
-        unservedLoad: `${grid.metrics.unserved_load_mw.toFixed(1)} MW`,
-      };
+      return [
+        {
+          label: "System Status",
+          value:
+            grid.metrics.load_lost_percent > 0 || grid.metrics.failed_components > 0
+              ? "Impacted"
+              : "Healthy",
+        },
+        { label: "Total Demand", value: `${grid.metrics.total_demand_mw.toFixed(1)} MW` },
+        { label: "Served Load", value: `${grid.metrics.served_load_mw.toFixed(1)} MW` },
+        { label: "Unserved Load", value: `${grid.metrics.unserved_load_mw.toFixed(1)} MW` },
+        { label: "Load Lost", value: `${grid.metrics.load_lost_percent.toFixed(1)}%` },
+        { label: "Max Line Loading", value: `${grid.metrics.max_line_loading_percent.toFixed(1)}%` },
+        { label: "Failed Lines", value: grid.metrics.failed_lines.toString() },
+        { label: "Failed Components", value: grid.metrics.failed_components.toString() },
+        ...predictionMetrics(prediction),
+      ];
     }
 
-    const failedNodes = nodes.filter((node) => node.data.status === "Failed").length;
-    const failedLines = edges.filter((edge) => edge.data?.status === "Failed").length;
-
-    return {
-      failedLines,
-      failedNodes,
-      maxLineLoading: "0.0%",
-      totalDemand: "0.0 MW",
-      totalGeneration: "0.0 MW",
-      servedLoad: "0.0 MW",
-      unservedLoad: "0.0 MW",
-    };
-  }, [currentCascadeStep, edges, grid, nodes]);
+    return [{ label: "System Status", value: "Loading" }];
+  }, [cascadeResult?.cascade_depth, currentCascadeStep, grid, prediction]);
 
   const applyGridResponse = useCallback(
     (response: ApiGridResponse, step?: ApiCascadeStep) => {
@@ -266,7 +268,7 @@ export function GridVisualization() {
     const componentId = selected.item.id;
 
     try {
-      setIsMutating(true);
+      setActiveAction("failure");
       setErrorMessage(null);
       const response = await simulateFailure(
         apiBaseUrl,
@@ -285,13 +287,13 @@ export function GridVisualization() {
         error instanceof Error ? error.message : "Unable to simulate failure",
       );
     } finally {
-      setIsMutating(false);
+      setActiveAction(null);
     }
   }, [apiBaseUrl, applyGridResponse, selected]);
 
   const handleResetScenario = useCallback(async () => {
     try {
-      setIsMutating(true);
+      setActiveAction("reset");
       setErrorMessage(null);
       const response = await resetScenario(apiBaseUrl);
       setCascadeResult(null);
@@ -306,7 +308,7 @@ export function GridVisualization() {
         error instanceof Error ? error.message : "Unable to reset scenario",
       );
     } finally {
-      setIsMutating(false);
+      setActiveAction(null);
     }
   }, [apiBaseUrl, applyGridResponse]);
 
@@ -319,7 +321,7 @@ export function GridVisualization() {
     const componentId = selected.item.id;
 
     try {
-      setIsMutating(true);
+      setActiveAction("cascade");
       setErrorMessage(null);
       const response = await runCascade(
         apiBaseUrl,
@@ -345,7 +347,7 @@ export function GridVisualization() {
         error instanceof Error ? error.message : "Unable to run cascade",
       );
     } finally {
-      setIsMutating(false);
+      setActiveAction(null);
     }
   }, [apiBaseUrl, operatingProfile, selected]);
 
@@ -358,7 +360,7 @@ export function GridVisualization() {
     const componentId = selected.item.id;
 
     try {
-      setIsFindingMitigation(true);
+      setActiveAction("mitigation");
       setErrorMessage(null);
       const response = await findMitigations(
         apiBaseUrl,
@@ -373,7 +375,7 @@ export function GridVisualization() {
         error instanceof Error ? error.message : "Unable to find mitigations",
       );
     } finally {
-      setIsFindingMitigation(false);
+      setActiveAction(null);
     }
   }, [apiBaseUrl, operatingProfile, selected]);
 
@@ -383,9 +385,11 @@ export function GridVisualization() {
       if (!recommendedCascade) {
         return;
       }
+      setActiveAction("recommendation");
       setCascadeResult(recommendedCascade);
       setCurrentStepIndex(0);
       setIsPlaying(recommendedCascade.steps.length > 1);
+      window.setTimeout(() => setActiveAction(null), 0);
     },
     [recommendationCascades],
   );
@@ -399,7 +403,7 @@ export function GridVisualization() {
     const componentId = selected.item.id;
 
     try {
-      setIsPredicting(true);
+      setActiveAction("predict");
       setErrorMessage(null);
       const response = await predictRisk(
         apiBaseUrl,
@@ -413,7 +417,7 @@ export function GridVisualization() {
         error instanceof Error ? error.message : "Unable to predict risk",
       );
     } finally {
-      setIsPredicting(false);
+      setActiveAction(null);
     }
   }, [apiBaseUrl, operatingProfile, selected]);
 
@@ -458,20 +462,9 @@ export function GridVisualization() {
         <div className="flex min-w-0 flex-col">
           <div className="border-b border-neutral-200 bg-white px-5 py-4">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-              {Array.isArray(metrics) ? (
-                metrics.map((metric) => (
-                  <Metric key={metric.label} label={metric.label} value={metric.value} />
-                ))
-              ) : (
-                <>
-                  <Metric label="Generation" value={metrics.totalGeneration} />
-                  <Metric label="Demand" value={metrics.totalDemand} />
-                  <Metric label="Served load" value={metrics.servedLoad} />
-                  <Metric label="Unserved load" value={metrics.unservedLoad} />
-                  <Metric label="Max line loading" value={metrics.maxLineLoading} />
-                  <Metric label="Failed components" value={(metrics.failedLines + metrics.failedNodes).toString()} />
-                </>
-              )}
+              {dashboardMetrics.map((metric) => (
+                <Metric key={metric.label} label={metric.label} value={metric.value} />
+              ))}
             </div>
           </div>
 
@@ -541,9 +534,7 @@ export function GridVisualization() {
                 }
               : null
           }
-          isMutating={isMutating}
-          isPredicting={isPredicting}
-          isFindingMitigation={isFindingMitigation}
+          activeAction={activeAction}
           mitigation={mitigation}
           onFindMitigation={handleFindMitigation}
           onOperatingProfileChange={(profile) => {
@@ -653,6 +644,27 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="mt-1 text-xl font-semibold text-neutral-950">{value}</div>
     </div>
   );
+}
+
+function predictionMetrics(prediction: RiskPrediction | null) {
+  if (!prediction) {
+    return [];
+  }
+
+  return [
+    {
+      label: "Cascade Probability",
+      value: `${(prediction.cascadeProbability * 100).toFixed(0)}%`,
+    },
+    {
+      label: "Predicted Load Loss",
+      value: `${prediction.predictedLoadLostPercent.toFixed(1)}%`,
+    },
+    {
+      label: "Risk Level",
+      value: prediction.riskLevel,
+    },
+  ];
 }
 
 function StateMessage({ title, message }: { title: string; message: string }) {

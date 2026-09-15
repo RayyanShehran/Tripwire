@@ -165,7 +165,7 @@ export async function fetchGrid(apiBaseUrl: string): Promise<ApiGridResponse> {
   });
 
   if (!response.ok) {
-    throw new Error(`Grid API returned ${response.status}`);
+    throw new Error(await apiErrorMessage(response, "Unable to load grid data"));
   }
 
   return (await response.json()) as ApiGridResponse;
@@ -189,7 +189,7 @@ export async function simulateFailure(
   });
 
   if (!response.ok) {
-    throw new Error(`Failure API returned ${response.status}`);
+    throw new Error(await apiErrorMessage(response, "Unable to simulate failure"));
   }
 
   const payload = (await response.json()) as ApiFailureResponse;
@@ -203,7 +203,7 @@ export async function resetScenario(apiBaseUrl: string): Promise<ApiGridResponse
   });
 
   if (!response.ok) {
-    throw new Error(`Reset API returned ${response.status}`);
+    throw new Error(await apiErrorMessage(response, "Unable to reset scenario"));
   }
 
   return (await response.json()) as ApiGridResponse;
@@ -229,7 +229,7 @@ export async function runCascade(
   });
 
   if (!response.ok) {
-    throw new Error(`Cascade API returned ${response.status}`);
+    throw new Error(await apiErrorMessage(response, "Unable to run cascade"));
   }
 
   return (await response.json()) as ApiCascadeResponse;
@@ -255,7 +255,7 @@ export async function predictRisk(
   });
 
   if (!response.ok) {
-    throw new Error(`Prediction API returned ${response.status}`);
+    throw new Error(await apiErrorMessage(response, "Unable to predict risk"));
   }
 
   return (await response.json()) as ApiPredictionResponse;
@@ -282,10 +282,42 @@ export async function findMitigations(
   });
 
   if (!response.ok) {
-    throw new Error(`Recommendation API returned ${response.status}`);
+    throw new Error(await apiErrorMessage(response, "Unable to find mitigation"));
   }
 
   return (await response.json()) as ApiMitigationResponse;
+}
+
+async function apiErrorMessage(response: Response, fallback: string) {
+  if (response.status === 0) {
+    return "Backend unavailable. Check that the FastAPI server is running.";
+  }
+
+  let detail: unknown = null;
+  try {
+    const payload = (await response.json()) as { detail?: unknown };
+    detail = payload.detail;
+  } catch {
+    detail = null;
+  }
+
+  if (response.status === 404) {
+    return "Selected component was not found in the backend grid model.";
+  }
+
+  if (response.status === 503) {
+    return "Tripwire backend is not ready. Check simulator and model artifacts.";
+  }
+
+  if (response.status === 422) {
+    return "The selected scenario settings are invalid.";
+  }
+
+  if (typeof detail === "string" && detail.length > 0 && !detail.includes("Traceback")) {
+    return detail;
+  }
+
+  return `${fallback}. Backend returned ${response.status}.`;
 }
 
 export function toDisplayStatus(status: ApiStatus): GridStatus {
