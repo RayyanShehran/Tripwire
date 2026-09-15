@@ -19,6 +19,7 @@ import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel } from "./info-panel";
 import {
   fetchGrid,
+  predictRisk,
   resetScenario,
   runCascade,
   simulateFailure,
@@ -28,11 +29,14 @@ import {
   type ApiCascadeStep,
   type ApiComponentType,
   type ApiGridResponse,
+  type ApiOperatingCondition,
+  type ApiPredictionResponse,
 } from "./api";
 import { statusStyles } from "./status";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
 import type { GridLine, GridNode, SelectedGridElement } from "./types";
+import type { OperatingProfileKey, RiskPrediction } from "./info-panel";
 
 const nodeTypes = {
   generator: GeneratorNode,
@@ -62,11 +66,14 @@ export function GridVisualization() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
+  const [isPredicting, setIsPredicting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const flowData = useMemo(() => (grid ? toFlowData(grid) : { nodes: [], edges: [] }), [grid]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
   const [selected, setSelected] = useState<SelectedGridElement>(null);
+  const [operatingProfile, setOperatingProfile] = useState<OperatingProfileKey>("baseline");
+  const [prediction, setPrediction] = useState<RiskPrediction | null>(null);
   const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
 
   const metrics = useMemo(() => {
@@ -218,15 +225,18 @@ export function GridVisualization() {
 
       if (firstNode && isGridNode(firstNode)) {
         setSelected({ kind: "node", item: firstNode });
+        setPrediction(null);
         return;
       }
 
       if (firstEdge && isGridLine(firstEdge)) {
         setSelected({ kind: "line", item: firstEdge });
+        setPrediction(null);
         return;
       }
 
       setSelected(null);
+      setPrediction(null);
     },
     [],
   );
@@ -248,6 +258,7 @@ export function GridVisualization() {
         componentId,
       );
       setCascadeResult(null);
+      setPrediction(null);
       setCurrentStepIndex(0);
       setIsPlaying(false);
       applyGridResponse(response);
@@ -266,6 +277,7 @@ export function GridVisualization() {
       setErrorMessage(null);
       const response = await resetScenario(apiBaseUrl);
       setCascadeResult(null);
+      setPrediction(null);
       setCurrentStepIndex(0);
       setIsPlaying(false);
       applyGridResponse(response);
@@ -296,6 +308,15 @@ export function GridVisualization() {
       );
 
       setCascadeResult(response);
+      setPrediction((currentPrediction) =>
+        currentPrediction
+          ? {
+              ...currentPrediction,
+              actualCascadeOccurred: response.cascade_depth > 0,
+              actualLoadLostPercent: response.final_metrics.load_lost_percent,
+            }
+          : null,
+      );
       setCurrentStepIndex(0);
       setIsPlaying(response.steps.length > 1);
     } catch (error) {
@@ -306,6 +327,33 @@ export function GridVisualization() {
       setIsMutating(false);
     }
   }, [apiBaseUrl, selected]);
+
+  const handlePredictRisk = useCallback(async () => {
+    if (!selected) {
+      return;
+    }
+
+    const componentType = selected.kind === "line" ? "line" : selected.item.type;
+    const componentId = selected.item.id;
+
+    try {
+      setIsPredicting(true);
+      setErrorMessage(null);
+      const response = await predictRisk(
+        apiBaseUrl,
+        componentType as ApiComponentType,
+        componentId,
+        operatingConditions[operatingProfile],
+      );
+      setPrediction(toRiskPrediction(response));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to predict risk",
+      );
+    } finally {
+      setIsPredicting(false);
+    }
+  }, [apiBaseUrl, operatingProfile, selected]);
 
   const handleSelectStep = useCallback((stepIndex: number) => {
     setCurrentStepIndex(stepIndex);
@@ -432,14 +480,52 @@ export function GridVisualization() {
               : null
           }
           isMutating={isMutating}
+          isPredicting={isPredicting}
+          onOperatingProfileChange={(profile) => {
+            setOperatingProfile(profile);
+            setPrediction(null);
+          }}
+          onPredictRisk={handlePredictRisk}
           onRunCascade={handleRunCascade}
           onResetScenario={handleResetScenario}
           onSimulateFailure={handleSimulateFailure}
+          operatingProfile={operatingProfile}
+          prediction={prediction}
           selected={selected}
         />
       </section>
     </ReactFlowProvider>
   );
+}
+
+const operatingConditions: Record<OperatingProfileKey, ApiOperatingCondition> = {
+  baseline: {
+    load_multiplier: 1.0,
+    generation_multiplier: 1.0,
+    line_rating_multiplier: 1.0,
+    dispatch_profile: "balanced",
+  },
+  stressed: {
+    load_multiplier: 1.25,
+    generation_multiplier: 0.9,
+    line_rating_multiplier: 0.45,
+    dispatch_profile: "south_reduced",
+  },
+  severe: {
+    load_multiplier: 1.5,
+    generation_multiplier: 0.8,
+    line_rating_multiplier: 0.32,
+    dispatch_profile: "south_heavy",
+  },
+};
+
+function toRiskPrediction(response: ApiPredictionResponse): RiskPrediction {
+  return {
+    cascadeProbability: response.cascade_probability,
+    predictedLoadLostPercent: response.predicted_load_lost_percent,
+    riskLevel: response.risk_level,
+    modelVersion: response.model_version,
+  };
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

@@ -101,6 +101,20 @@ export type ApiCascadeResponse = {
   final_metrics: ApiCascadeFinalMetrics;
 };
 
+export type ApiOperatingCondition = {
+  load_multiplier: number;
+  generation_multiplier: number;
+  line_rating_multiplier: number;
+  dispatch_profile: string;
+};
+
+export type ApiPredictionResponse = {
+  cascade_probability: number;
+  predicted_load_lost_percent: number;
+  risk_level: "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+  model_version: string;
+};
+
 const displayStatuses: Record<ApiStatus, GridStatus> = {
   healthy: "Healthy",
   stressed: "Stressed",
@@ -180,6 +194,32 @@ export async function runCascade(
   }
 
   return (await response.json()) as ApiCascadeResponse;
+}
+
+export async function predictRisk(
+  apiBaseUrl: string,
+  componentType: ApiComponentType,
+  componentId: string,
+  operatingCondition: ApiOperatingCondition,
+): Promise<ApiPredictionResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/predict`, {
+    body: JSON.stringify({
+      component_type: componentType,
+      component_id: componentId,
+      operating_condition: operatingCondition,
+    }),
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Prediction API returned ${response.status}`);
+  }
+
+  return (await response.json()) as ApiPredictionResponse;
 }
 
 export function toDisplayStatus(status: ApiStatus): GridStatus {

@@ -14,9 +14,14 @@ function Row({ label, value }: { label: string; value: string }) {
 type InfoPanelProps = {
   cascadeSummary: CascadeSummary | null;
   isMutating: boolean;
+  isPredicting: boolean;
+  onOperatingProfileChange: (profile: OperatingProfileKey) => void;
+  onPredictRisk: () => void;
   onRunCascade: () => void;
   onResetScenario: () => void;
   onSimulateFailure: () => void;
+  operatingProfile: OperatingProfileKey;
+  prediction: RiskPrediction | null;
   selected: SelectedGridElement;
 };
 
@@ -27,12 +32,28 @@ export type CascadeSummary = {
   terminationReason: string;
 };
 
+export type OperatingProfileKey = "baseline" | "stressed" | "severe";
+
+export type RiskPrediction = {
+  cascadeProbability: number;
+  predictedLoadLostPercent: number;
+  riskLevel: string;
+  modelVersion: string;
+  actualCascadeOccurred?: boolean;
+  actualLoadLostPercent?: number;
+};
+
 export function InfoPanel({
   cascadeSummary,
   isMutating,
+  isPredicting,
+  onOperatingProfileChange,
+  onPredictRisk,
   onRunCascade,
   onResetScenario,
   onSimulateFailure,
+  operatingProfile,
+  prediction,
   selected,
 }: InfoPanelProps) {
   if (!selected) {
@@ -46,11 +67,17 @@ export function InfoPanel({
         <PanelActions
           canSimulate={false}
           canRunCascade={false}
+          canPredict={false}
           isMutating={isMutating}
+          isPredicting={isPredicting}
+          onOperatingProfileChange={onOperatingProfileChange}
+          onPredictRisk={onPredictRisk}
           onRunCascade={onRunCascade}
           onResetScenario={onResetScenario}
           onSimulateFailure={onSimulateFailure}
+          operatingProfile={operatingProfile}
         />
+        <PredictionPanel prediction={prediction} />
         <CascadeSummaryPanel summary={cascadeSummary} />
       </aside>
     );
@@ -81,11 +108,17 @@ export function InfoPanel({
         <PanelActions
           canSimulate
           canRunCascade
+          canPredict
           isMutating={isMutating}
+          isPredicting={isPredicting}
+          onOperatingProfileChange={onOperatingProfileChange}
+          onPredictRisk={onPredictRisk}
           onRunCascade={onRunCascade}
           onResetScenario={onResetScenario}
           onSimulateFailure={onSimulateFailure}
+          operatingProfile={operatingProfile}
         />
+        <PredictionPanel prediction={prediction} />
         <CascadeSummaryPanel summary={cascadeSummary} />
       </aside>
     );
@@ -114,11 +147,17 @@ export function InfoPanel({
       <PanelActions
         canSimulate
         canRunCascade
+        canPredict
         isMutating={isMutating}
+        isPredicting={isPredicting}
+        onOperatingProfileChange={onOperatingProfileChange}
+        onPredictRisk={onPredictRisk}
         onRunCascade={onRunCascade}
         onResetScenario={onResetScenario}
         onSimulateFailure={onSimulateFailure}
+        operatingProfile={operatingProfile}
       />
+      <PredictionPanel prediction={prediction} />
       <CascadeSummaryPanel summary={cascadeSummary} />
     </aside>
   );
@@ -131,20 +170,50 @@ function formatNullableValue(value: number | null, suffix: string) {
 function PanelActions({
   canRunCascade,
   canSimulate,
+  canPredict,
   isMutating,
+  isPredicting,
+  onOperatingProfileChange,
+  onPredictRisk,
   onRunCascade,
   onResetScenario,
   onSimulateFailure,
+  operatingProfile,
 }: {
   canRunCascade: boolean;
   canSimulate: boolean;
+  canPredict: boolean;
   isMutating: boolean;
+  isPredicting: boolean;
+  onOperatingProfileChange: (profile: OperatingProfileKey) => void;
+  onPredictRisk: () => void;
   onRunCascade: () => void;
   onResetScenario: () => void;
   onSimulateFailure: () => void;
+  operatingProfile: OperatingProfileKey;
 }) {
   return (
     <div className="mt-6 grid gap-2">
+      <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        Prediction profile
+        <select
+          className="rounded border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold normal-case tracking-normal text-neutral-900"
+          onChange={(event) => onOperatingProfileChange(event.target.value as OperatingProfileKey)}
+          value={operatingProfile}
+        >
+          <option value="baseline">Baseline</option>
+          <option value="stressed">Stressed</option>
+          <option value="severe">Severe</option>
+        </select>
+      </label>
+      <button
+        className="rounded border border-red-700 bg-white px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
+        disabled={!canPredict || isMutating || isPredicting}
+        onClick={onPredictRisk}
+        type="button"
+      >
+        {isPredicting ? "Predicting..." : "Predict Risk"}
+      </button>
       <button
         className="rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
         disabled={!canSimulate || isMutating}
@@ -169,6 +238,46 @@ function PanelActions({
       >
         Return to Baseline
       </button>
+    </div>
+  );
+}
+
+function PredictionPanel({ prediction }: { prediction: RiskPrediction | null }) {
+  if (!prediction) {
+    return null;
+  }
+
+  return (
+    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
+      <h3 className="text-sm font-semibold text-neutral-950">Cascade Risk</h3>
+      <dl className="mt-3">
+        <Row
+          label="Probability"
+          value={`${(prediction.cascadeProbability * 100).toFixed(0)}%`}
+        />
+        <Row
+          label="Predicted load loss"
+          value={`${prediction.predictedLoadLostPercent.toFixed(1)}%`}
+        />
+        <Row label="Risk" value={prediction.riskLevel} />
+      </dl>
+      {prediction.actualCascadeOccurred !== undefined ? (
+        <div className="mt-4 border-t border-neutral-200 pt-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            Prediction vs Actual
+          </h4>
+          <dl className="mt-2">
+            <Row
+              label="Actual cascade"
+              value={prediction.actualCascadeOccurred ? "Yes" : "No"}
+            />
+            <Row
+              label="Actual load loss"
+              value={`${(prediction.actualLoadLostPercent ?? 0).toFixed(1)}%`}
+            />
+          </dl>
+        </div>
+      ) : null}
     </div>
   );
 }
