@@ -45,23 +45,24 @@ export function TransmissionLine({
         path={edgePath}
         style={{
           stroke: styles.edge,
-          strokeWidth: isEmphasized ? 5 : status === "Failed" ? 2 : 3,
-          strokeDasharray: status === "Failed" ? "8 6" : undefined,
+          strokeWidth: isEmphasized ? 4.5 : status === "Failed" ? 2 : 2.6,
+          strokeDasharray: status === "Failed" ? "7 6" : undefined,
+          opacity: status === "Failed" ? 0.55 : 0.9,
         }}
       />
       {data && data.capacityMw !== null && data.capacityMw > 0 ? (
         <EdgeLabelRenderer>
           <div
-            className={`nodrag nopan pointer-events-none absolute rounded border bg-white px-2 py-1 text-[10px] font-semibold shadow-sm ${
+            className={`nodrag nopan pointer-events-none absolute rounded border px-2 py-1 text-[10px] font-semibold shadow-lg shadow-black/30 ${
               isEmphasized
-                ? "border-red-300 text-red-800"
-                : "border-neutral-200 text-neutral-700"
+                ? "border-red-400/70 bg-red-950/90 text-red-100"
+                : "border-slate-700 bg-slate-950/90 text-slate-200"
             }`}
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             }}
           >
-            {data.name} · {formatNullableValue(data.loadingPercent, "%")} · {data.capacityMw} MW
+            {formatNullableValue(data.loadingPercent, "%")} · {data.capacityMw} MW
           </div>
         </EdgeLabelRenderer>
       ) : null}

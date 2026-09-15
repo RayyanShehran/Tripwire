@@ -10,27 +10,27 @@ export const statusStyles: Record<
   }
 > = {
   Healthy: {
-    border: "border-emerald-500",
-    badge: "bg-emerald-100 text-emerald-800",
-    edge: "#059669",
-    fill: "#ecfdf5",
+    border: "border-emerald-400/70",
+    badge: "border border-emerald-400/40 bg-emerald-400/10 text-emerald-100",
+    edge: "#34d399",
+    fill: "#052e26",
   },
   Stressed: {
-    border: "border-amber-500",
-    badge: "bg-amber-100 text-amber-900",
-    edge: "#d97706",
-    fill: "#fffbeb",
+    border: "border-amber-300/80",
+    badge: "border border-amber-300/40 bg-amber-300/10 text-amber-100",
+    edge: "#fbbf24",
+    fill: "#3b2f08",
   },
   Overloaded: {
-    border: "border-red-500",
-    badge: "bg-red-100 text-red-800",
-    edge: "#dc2626",
-    fill: "#fef2f2",
+    border: "border-red-400/80",
+    badge: "border border-red-400/50 bg-red-400/10 text-red-100",
+    edge: "#f87171",
+    fill: "#3b0b12",
   },
   Failed: {
-    border: "border-neutral-500",
-    badge: "bg-neutral-200 text-neutral-800",
-    edge: "#525252",
-    fill: "#f5f5f5",
+    border: "border-slate-500",
+    badge: "border border-slate-500 bg-slate-700/70 text-slate-100",
+    edge: "#64748b",
+    fill: "#1e293b",
   },
 };

@@ -3,13 +3,24 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --tw-bg: #070b13;
+  --tw-surface: #0d1422;
+  --tw-surface-raised: #111a2b;
+  --tw-border: #253044;
+  --tw-text: #e6edf7;
+  --tw-muted: #94a3b8;
+  --tw-accent: #67e8f9;
+  --tw-healthy: #34d399;
+  --tw-warning: #fbbf24;
+  --tw-danger: #f87171;
 }
 
 body {
   margin: 0;
-  background: #f6f7f9;
-  color: #171717;
+  background: var(--tw-bg);
+  color: var(--tw-text);
+  font-family: Inter, Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .react-flow__node {
@@ -17,5 +28,10 @@ body {
 }
 
 .react-flow__node.selected > div {
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+  box-shadow: 0 0 0 2px rgba(103, 232, 249, 0.7), 0 0 24px rgba(103, 232, 249, 0.12);
+}
+
+.react-flow__attribution {
+  background: rgba(15, 23, 42, 0.85) !important;
+  color: #94a3b8 !important;
 }
