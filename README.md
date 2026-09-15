@@ -174,6 +174,7 @@ Status thresholds:
 GET /health
 GET /ready
 GET /api/grid
+GET /api/demo-presets
 POST /api/failure
 POST /api/cascade
 POST /api/reset
@@ -333,6 +334,59 @@ Invoke-RestMethod http://127.0.0.1:8000/api/recommend `
 
 The endpoint returns the no-mitigation baseline, top beneficial recommendations, simulated before/after outcomes, score, candidate counts, runtime, and a cascade result that the frontend can replay.
 
+Concise request/response examples are also available in `docs/api-examples.md`.
+
+## Quick Demo
+
+Backend:
+
+```powershell
+cd C:\Projects\Tripwire\Tripwire\backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+Frontend:
+
+```powershell
+cd C:\Projects\Tripwire\Tripwire\frontend
+pnpm dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+If port 3000 is busy, Next.js may choose another localhost port. The frontend expects the backend at `http://127.0.0.1:8000` unless `NEXT_PUBLIC_API_BASE_URL` is changed.
+
+If model artifacts are absent, regenerate the dataset and retrain:
+
+```powershell
+cd C:\Projects\Tripwire\Tripwire\backend
+.\.venv\Scripts\python.exe scripts\generate_dataset.py --seed 42
+.\.venv\Scripts\python.exe scripts\train_models.py
+```
+
+## Demo Presets
+
+The frontend includes deterministic demo presets loaded from `GET /api/demo-presets`.
+
+| Preset | Initial failure | Operating condition | Expected simulator result |
+| --- | --- | --- | --- |
+| Low Risk | `line-402` | Baseline | Depth 0, 0.0% load lost, 1 failed line |
+| Severe Cascade | `line-101` | Critical demo profile | Depth 2, 100.0% load lost, 12 failed lines |
+| Mitigation Example | `line-101` | Critical demo profile | Same severe baseline, with beneficial mitigation available |
+
+Recommended presentation path:
+
+1. Load healthy grid.
+2. Select **Severe Cascade** or **Mitigation Example**.
+3. Click **Predict Risk**.
+4. Click **Run Cascade** and play the timeline.
+5. Click **Find Mitigation**.
+6. Compare prediction, actual result, and mitigated result in the demo summary.
+
 ## Demo Workflow
 
 1. Start the backend.
@@ -350,7 +404,15 @@ The endpoint returns the no-mitigation baseline, top beneficial recommendations,
 
 ## Screenshots / Demo
 
-Add final presentation screenshots or demo video links here before submission.
+Use `docs/screenshots.md` as the capture checklist before submission.
+
+Submission support docs:
+
+- `docs/demo-script.md`
+- `docs/report-outline.md`
+- `docs/screenshots.md`
+- `docs/api-examples.md`
+- `docs/architecture.md`
 
 ### Frontend
 
@@ -416,14 +478,19 @@ Implemented:
 - Saved classifier/regressor pipelines and model metadata.
 - `POST /api/predict` endpoint for synthetic-scenario cascade risk prediction.
 - `POST /api/recommend` endpoint for simulation-validated mitigation ranking.
+- `GET /api/demo-presets` endpoint for deterministic presentation presets.
 - Frontend prediction panel for selected lines and buses.
 - Frontend mitigation panel with before/after comparison and recommendation playback.
+- Frontend demo scenario controls and compact demo result summary.
+- Frontend status legend, help text, and methodology/limitations panel.
 - Backend and frontend ignore files.
 - GitHub Actions CI workflow.
 
 Not implemented yet:
 
 - Interactive grid editor.
+- Real utility dataset ingestion.
+- Production deployment.
 
 ## Limitations
 

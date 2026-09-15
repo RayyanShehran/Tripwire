@@ -54,6 +54,7 @@ Grid logic lives under `backend/app/simulation/` instead of inside API route han
 
 - `grid.py` creates the sample grid, runs pandapower, applies component outages, detects supplied buses, assigns component status, and serializes API-safe JSON.
 - `cascade.py` runs deterministic cascading-failure simulations from one initial component failure.
+- `demo.py` defines deterministic simulator-backed presentation presets.
 - `scenario.py` builds stateless single-failure scenarios from a fresh baseline and wraps solved or blackout results with scenario metadata.
 - `app/ml/dataset.py` generates machine-learning-ready scenario rows from configurable pre-failure operating profiles and post-cascade targets.
 - `app/ml/features.py` defines the authoritative pre-failure model feature list and feature-frame builders.
@@ -151,6 +152,7 @@ Current endpoints:
 GET /health
 GET /ready
 GET /api/grid
+GET /api/demo-presets
 POST /api/failure
 POST /api/cascade
 POST /api/reset
@@ -174,6 +176,44 @@ POST /api/recommend -> baseline simulation + bounded intervention simulations
 ```
 
 No endpoint inherits outages from a previous request. This keeps repeated tests deterministic and avoids hidden process-level scenario state.
+
+## Architecture Diagram
+
+```mermaid
+flowchart LR
+  Frontend[Next.js Frontend]
+  API[FastAPI API]
+  Grid[Grid Simulation]
+  Cascade[Cascade Engine]
+  Dataset[Synthetic Dataset]
+  ML[ML Prediction]
+  Mitigation[Mitigation Engine]
+  Results[Results And Timeline]
+
+  Frontend --> API
+  API --> Grid
+  Grid --> Cascade
+  Cascade --> Results
+  Cascade --> Dataset
+  Dataset --> ML
+  API --> ML
+  API --> Mitigation
+  Mitigation --> Cascade
+  Mitigation --> Results
+  Results --> Frontend
+```
+
+## Demo Presets
+
+`GET /api/demo-presets` returns deterministic presentation scenarios:
+
+```text
+low-risk           line-402, baseline profile, depth 0, 0% load lost
+severe-cascade     line-101, critical profile, depth 2, 100% load lost
+mitigation-example line-101, critical profile, depth 2, 100% load lost before mitigation
+```
+
+The frontend uses these presets to select the component and operating condition. Outcomes still come from `/api/predict`, `/api/cascade`, and `/api/recommend`.
 
 `GET /api/grid` returns:
 
