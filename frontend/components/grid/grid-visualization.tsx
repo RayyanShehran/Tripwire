@@ -68,8 +68,7 @@ function isGridLine(edge: Edge): edge is GridLine {
 }
 
 export function GridVisualization() {
-  const apiBaseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+  const apiBaseUrl = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
   const [grid, setGrid] = useState<ApiGridResponse | null>(null);
   const [cascadeResult, setCascadeResult] = useState<ApiCascadeResponse | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -652,6 +651,10 @@ function profileForCondition(condition: ApiOperatingCondition): OperatingProfile
   );
 
   return (match?.[0] as OperatingProfileKey | undefined) ?? "baseline";
+}
+
+function normalizeApiUrl(value: string | undefined) {
+  return value?.replace(/\/$/, "") ?? "";
 }
 
 function findPresetSelection(

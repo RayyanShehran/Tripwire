@@ -178,6 +178,7 @@ const displayStatuses: Record<ApiStatus, GridStatus> = {
 };
 
 export async function fetchGrid(apiBaseUrl: string): Promise<ApiGridResponse> {
+  requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/grid`, {
     cache: "no-store",
   });
@@ -190,6 +191,7 @@ export async function fetchGrid(apiBaseUrl: string): Promise<ApiGridResponse> {
 }
 
 export async function fetchDemoPresets(apiBaseUrl: string): Promise<ApiDemoPreset[]> {
+  requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/demo-presets`, {
     cache: "no-store",
   });
@@ -207,6 +209,7 @@ export async function simulateFailure(
   componentType: ApiComponentType,
   componentId: string,
 ): Promise<ApiGridResponse> {
+  requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/failure`, {
     body: JSON.stringify({
       component_type: componentType,
@@ -228,6 +231,7 @@ export async function simulateFailure(
 }
 
 export async function resetScenario(apiBaseUrl: string): Promise<ApiGridResponse> {
+  requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/reset`, {
     cache: "no-store",
     method: "POST",
@@ -246,6 +250,7 @@ export async function runCascade(
   componentId: string,
   operatingCondition: ApiOperatingCondition,
 ): Promise<ApiCascadeResponse> {
+  requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/cascade`, {
     body: JSON.stringify({
       component_type: componentType,
@@ -272,6 +277,7 @@ export async function predictRisk(
   componentId: string,
   operatingCondition: ApiOperatingCondition,
 ): Promise<ApiPredictionResponse> {
+  requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/predict`, {
     body: JSON.stringify({
       component_type: componentType,
@@ -298,6 +304,7 @@ export async function findMitigations(
   componentId: string,
   operatingCondition: ApiOperatingCondition,
 ): Promise<ApiMitigationResponse> {
+  requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/recommend`, {
     body: JSON.stringify({
       component_type: componentType,
@@ -317,6 +324,14 @@ export async function findMitigations(
   }
 
   return (await response.json()) as ApiMitigationResponse;
+}
+
+function requireApiBaseUrl(apiBaseUrl: string) {
+  if (!apiBaseUrl) {
+    throw new Error(
+      "Frontend API URL is not configured. Set NEXT_PUBLIC_API_URL to the deployed backend URL.",
+    );
+  }
 }
 
 async function apiErrorMessage(response: Response, fallback: string) {
