@@ -4,7 +4,7 @@ Tripwire is a web-based power-grid cascading failure simulation and decision-sup
 
 This repository currently contains the first working local version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, a deterministic cascading-failure engine, baseline scikit-learn risk models trained on synthetic Tripwire scenarios, and a Next.js frontend that renders the network with React Flow.
 
-Mitigation recommendation features are intentionally not implemented yet.
+Tripwire remains a university/demo project; its results are based on synthetic simulation data.
 
 ## Project Structure
 
@@ -172,6 +172,7 @@ Status thresholds:
 
 ```text
 GET /health
+GET /ready
 GET /api/grid
 POST /api/failure
 POST /api/cascade
@@ -227,6 +228,16 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+Optional backend environment settings are documented in `backend/.env.example`:
+
+```text
+ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+ALLOW_ORIGIN_REGEX=http://(localhost|127\.0\.0\.1):30\d{2}
+MODEL_DIR=C:\Projects\Tripwire\Tripwire\backend\models
+DATA_DIR=C:\Projects\Tripwire\Tripwire\backend\data
+LOG_LEVEL=INFO
+```
+
 Health check:
 
 ```powershell
@@ -238,6 +249,14 @@ Expected response:
 ```json
 {"status":"ok"}
 ```
+
+Readiness check:
+
+```powershell
+curl http://127.0.0.1:8000/ready
+```
+
+Readiness verifies that the simulator initializes and model artifacts can load.
 
 Grid check:
 
@@ -314,6 +333,25 @@ Invoke-RestMethod http://127.0.0.1:8000/api/recommend `
 
 The endpoint returns the no-mitigation baseline, top beneficial recommendations, simulated before/after outcomes, score, candidate counts, runtime, and a cascade result that the frontend can replay.
 
+## Demo Workflow
+
+1. Start the backend.
+2. Start the frontend.
+3. Open the healthy grid.
+4. Select a bus or transmission line.
+5. Use `Predict Risk`.
+6. Use `Simulate Failure`.
+7. Use `Run Cascade`.
+8. Step through the cascade timeline.
+9. Use `Find Mitigation`.
+10. Compare no-mitigation and recommended outcomes.
+11. Use `Simulate Recommendation` to replay the selected mitigation.
+12. Use `Return to Baseline`.
+
+## Screenshots / Demo
+
+Add final presentation screenshots or demo video links here before submission.
+
 ### Frontend
 
 From `tripwire/frontend`:
@@ -346,6 +384,11 @@ pnpm lint
 pnpm build
 ```
 
+CI:
+
+- GitHub Actions runs backend tests.
+- GitHub Actions runs frontend lint and production build.
+
 ## Current Scope
 
 Implemented:
@@ -376,8 +419,18 @@ Implemented:
 - Frontend prediction panel for selected lines and buses.
 - Frontend mitigation panel with before/after comparison and recommendation playback.
 - Backend and frontend ignore files.
+- GitHub Actions CI workflow.
 
 Not implemented yet:
 
 - Interactive grid editor.
-- Mitigation recommendation engine.
+
+## Limitations
+
+- The network is a synthetic 8-bus teaching model.
+- Operating conditions are simplified and generated for simulation coverage.
+- Results are not validated against real utility data.
+- Tripwire is not intended for operational grid control.
+- ML metrics apply only to generated Tripwire simulation scenarios.
+- Mitigation recommendations are simulation-derived and not guaranteed blackout prevention.
+- Deployment configuration is prepared conceptually, but the app has not been deployed from this repository.

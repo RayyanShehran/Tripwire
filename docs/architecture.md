@@ -149,6 +149,7 @@ Current endpoints:
 
 ```text
 GET /health
+GET /ready
 GET /api/grid
 POST /api/failure
 POST /api/cascade
@@ -157,6 +158,8 @@ GET /api/reset
 POST /api/predict
 POST /api/recommend
 ```
+
+`GET /ready` checks that the simulator can initialize and saved ML artifacts can load. It is intended for runtime readiness checks, not deep simulation benchmarking.
 
 Endpoint lifecycle rules:
 
@@ -461,3 +464,34 @@ INTERVENTION_COST_WEIGHT = 0.25
 ```
 
 The scoring function prioritizes load-loss reduction, then fewer failed components, then lower cascade depth, while applying a small penalty for intervention size. Returned recommendations should be described as "Recommended based on Tripwire simulation" and not as guaranteed blackout prevention.
+
+## Configuration And CI
+
+Backend runtime configuration is environment-driven:
+
+```text
+ALLOWED_ORIGINS
+ALLOW_ORIGIN_REGEX
+MODEL_DIR
+DATA_DIR
+LOG_LEVEL
+```
+
+Development defaults allow localhost frontend origins. Production should set explicit allowed frontend origins and should not use wildcard CORS with credentials.
+
+The repository includes GitHub Actions CI for:
+
+```text
+backend: install Python dependencies and run pytest
+frontend: install pnpm dependencies, run lint, run production build
+```
+
+## Final Limitations
+
+- The electrical grid is synthetic and intentionally small.
+- Operating profiles are simplified and generated for repeatable demos.
+- The ML models are trained only on Tripwire synthetic simulation scenarios.
+- No real utility operating data has been used for validation.
+- The application is not intended for operational grid control.
+- Mitigation recommendations are simulation-derived and bounded to simple redispatch/load-shedding candidates.
+- Deployment files are not included because no deployment target has been selected.
