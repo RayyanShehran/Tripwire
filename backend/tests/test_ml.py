@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+import math
+
+import pandas as pd
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.ml.dataset import generate_dataset
+from app.ml.features import MODEL_FEATURE_COLUMNS, TARGET_LEAKAGE_COLUMNS, feature_frame
+from app.ml.inference import load_model_bundle, predict_from_frame, predict_from_scenario
+from app.ml.train import (
+    CLASSIFIER_ARTIFACT,
+    METADATA_ARTIFACT,
+    REGRESSOR_ARTIFACT,
+    split_dataset,
+    train_models,
+)
+
+
+@pytest.fixture(scope="module")
+def ml_dataset(tmp_path_factory: pytest.TempPathFactory) -> tuple[pd.DataFrame, object]:
+    result = generate_dataset(
+        seed=51,
+        load_multipliers=(1.0, 1.5),
+        generation_multipliers=(1.0,),
+        line_rating_multipliers=(1.0, 0.32),
+        dispatch_profiles=("balanced",),
+        component_types=("line", "bus"),
+    )
+    path = tmp_path_factory.mktemp("ml-data") / "dataset.csv"
+    result.dataframe.to_csv(path, index=False)
+    return result.dataframe, path
+
+
+def test_model_feature_list_excludes_targets() -> None:
+    assert not TARGET_LEAKAGE_COLUMNS.intersection(MODEL_FEATURE_COLUMNS)
+
+
+def test_preprocessing_feature_frame_uses_only_authoritative_features(ml_dataset) -> None:
+    dataframe, _ = ml_dataset
+    frame = feature_frame(dataframe)
+
+    assert list(frame.columns) == MODEL_FEATURE_COLUMNS
+    assert "load_lost_percent" not in frame.columns
+    assert "cascade_depth" not in frame.columns
+
+
+def test_split_strategy_is_deterministic(ml_dataset) -> None:
+    dataframe, _ = ml_dataset
+    first = split_dataset(dataframe, random_seed=42)
+    second = split_dataset(dataframe, random_seed=42)
+
+    assert first.strategy == second.strategy
+    assert first.x_test.index.tolist() == second.x_test.index.tolist()
+
+
+def test_classifier_and_regressor_training_complete(ml_dataset, tmp_path) -> None:
+    _, dataset_path = ml_dataset
+    result = train_models(dataset_path=dataset_path, output_dir=tmp_path, save_artifacts=False)
+
+    assert result.metadata["classifier_model"]
+    assert result.metadata["regressor_model"]
+    assert result.metadata["classifier_metrics"]["f1"] >= 0.0
+    assert result.metadata["regressor_metrics"]["mae"] >= 0.0
+
+
+def test_saved_artifacts_load_and_predict(ml_dataset, tmp_path) -> None:
+    dataframe, dataset_path = ml_dataset
+    train_models(dataset_path=dataset_path, output_dir=tmp_path, save_artifacts=True)
+
+    assert (tmp_path / CLASSIFIER_ARTIFACT).exists()
+    assert (tmp_path / REGRESSOR_ARTIFACT).exists()
+    assert (tmp_path / METADATA_ARTIFACT).exists()
+
+    load_model_bundle.cache_clear()
+    bundle = load_model_bundle(tmp_path)
+    prediction = predict_from_frame(feature_frame(dataframe).head(1), model_dir=tmp_path)
+
+    assert bundle["metadata"]["model_version"] == "tripwire-ml-v1"
+    assert 0.0 <= prediction["cascade_probability"] <= 1.0
+    assert 0.0 <= prediction["predicted_load_lost_percent"] <= 100.0
+    assert math.isfinite(prediction["cascade_probability"])
+    assert math.isfinite(prediction["predicted_load_lost_percent"])
+
+
+def test_inference_from_scenario_uses_pre_failure_features_only() -> None:
+    prediction = predict_from_scenario(
+        component_type="line",
+        component_id="line-101",
+        load_multiplier=1.5,
+        generation_multiplier=1.0,
+        line_rating_multiplier=0.32,
+        dispatch_profile="balanced",
+    )
+
+    assert 0.0 <= prediction["cascade_probability"] <= 1.0
+    assert 0.0 <= prediction["predicted_load_lost_percent"] <= 100.0
+
+
+def test_predict_api_valid_request() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/predict",
+        json={
+            "component_type": "line",
+            "component_id": "line-101",
+            "operating_condition": {
+                "load_multiplier": 1.5,
+                "generation_multiplier": 1.0,
+                "line_rating_multiplier": 0.32,
+                "dispatch_profile": "balanced",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert 0.0 <= payload["cascade_probability"] <= 1.0
+    assert 0.0 <= payload["predicted_load_lost_percent"] <= 100.0
+    assert payload["risk_level"] in {"LOW", "MODERATE", "HIGH", "CRITICAL"}
+    assert payload["model_version"]
+
+
+def test_predict_api_rejects_invalid_component() -> None:
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/predict",
+        json={
+            "component_type": "line",
+            "component_id": "bad-line",
+        },
+    )
+
+    assert response.status_code == 404

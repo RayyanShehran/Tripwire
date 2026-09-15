@@ -48,9 +48,9 @@ def load_model_bundle(model_dir: str | Path = MODEL_DIR) -> ModelBundle:
     }
 
 
-def predict_from_features(features: dict[str, Any]) -> PredictionResult:
+def predict_from_features(features: dict[str, Any], model_dir: str | Path = MODEL_DIR) -> PredictionResult:
     frame = validate_feature_payload(features)
-    return predict_from_frame(frame)
+    return predict_from_frame(frame, model_dir=model_dir)
 
 
 def predict_from_scenario(
@@ -60,6 +60,7 @@ def predict_from_scenario(
     generation_multiplier: float = 1.0,
     line_rating_multiplier: float = 1.0,
     dispatch_profile: str = "balanced",
+    model_dir: str | Path = MODEL_DIR,
 ) -> PredictionResult:
     frame = feature_frame_from_config(
         component_type=component_type,
@@ -69,11 +70,11 @@ def predict_from_scenario(
         line_rating_multiplier=line_rating_multiplier,
         dispatch_profile=dispatch_profile,
     )
-    return predict_from_frame(frame)
+    return predict_from_frame(frame, model_dir=model_dir)
 
 
-def predict_from_frame(frame: pd.DataFrame) -> PredictionResult:
-    bundle = load_model_bundle()
+def predict_from_frame(frame: pd.DataFrame, model_dir: str | Path = MODEL_DIR) -> PredictionResult:
+    bundle = load_model_bundle(model_dir)
     classifier = bundle["classifier"]
     regressor = bundle["regressor"]
     metadata = bundle["metadata"]
