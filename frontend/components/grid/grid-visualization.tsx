@@ -19,6 +19,7 @@ import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel } from "./info-panel";
 import {
   fetchGrid,
+  fetchDemoPresets,
   findMitigations,
   predictRisk,
   resetScenario,
@@ -29,6 +30,7 @@ import {
   type ApiCascadeResponse,
   type ApiCascadeStep,
   type ApiComponentType,
+  type ApiDemoPreset,
   type ApiGridResponse,
   type ApiMitigationRecommendation,
   type ApiMitigationResponse,
@@ -76,6 +78,8 @@ export function GridVisualization() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const flowData = useMemo(() => (grid ? toFlowData(grid) : { nodes: [], edges: [] }), [grid]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
@@ -172,13 +176,17 @@ export function GridVisualization() {
       try {
         setIsLoading(true);
         setErrorMessage(null);
-        const response = await fetchGrid(apiBaseUrl);
+        const [response, presets] = await Promise.all([
+          fetchGrid(apiBaseUrl),
+          fetchDemoPresets(apiBaseUrl),
+        ]);
 
         if (!isMounted) {
           return;
         }
 
         applyGridResponse(response);
+        setDemoPresets(presets);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -242,6 +250,7 @@ export function GridVisualization() {
         setSelected({ kind: "node", item: firstNode });
         setPrediction(null);
         setMitigation(null);
+        setSelectedPresetId(null);
         return;
       }
 
@@ -249,14 +258,47 @@ export function GridVisualization() {
         setSelected({ kind: "line", item: firstEdge });
         setPrediction(null);
         setMitigation(null);
+        setSelectedPresetId(null);
         return;
       }
 
       setSelected(null);
       setPrediction(null);
       setMitigation(null);
+      setSelectedPresetId(null);
     },
     [],
+  );
+
+  const handleLoadPreset = useCallback(
+    async (preset: ApiDemoPreset) => {
+      try {
+        setActiveAction("reset");
+        setErrorMessage(null);
+        const response = await resetScenario(apiBaseUrl);
+        const nextFlowData = toFlowData(response);
+
+        setGrid(response);
+        setNodes(nextFlowData.nodes);
+        setEdges(nextFlowData.edges);
+        setCascadeResult(null);
+        setPrediction(null);
+        setMitigation(null);
+        setRecommendationCascades(new Map());
+        setCurrentStepIndex(0);
+        setIsPlaying(false);
+        setOperatingProfile(profileForCondition(preset.operating_condition));
+        setSelectedPresetId(preset.id);
+        setSelected(findPresetSelection(preset, nextFlowData));
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Unable to load demo preset",
+        );
+      } finally {
+        setActiveAction(null);
+      }
+    },
+    [apiBaseUrl, setEdges, setNodes],
   );
 
   const handleSimulateFailure = useCallback(async () => {
@@ -279,6 +321,7 @@ export function GridVisualization() {
       setPrediction(null);
       setMitigation(null);
       setRecommendationCascades(new Map());
+      setSelectedPresetId(null);
       setCurrentStepIndex(0);
       setIsPlaying(false);
       applyGridResponse(response);
@@ -300,6 +343,7 @@ export function GridVisualization() {
       setPrediction(null);
       setMitigation(null);
       setRecommendationCascades(new Map());
+      setSelectedPresetId(null);
       setCurrentStepIndex(0);
       setIsPlaying(false);
       applyGridResponse(response);
@@ -461,6 +505,12 @@ export function GridVisualization() {
       <section className="grid min-h-[calc(100vh-82px)] grid-cols-1 bg-neutral-100 lg:grid-cols-[1fr_340px]">
         <div className="flex min-w-0 flex-col">
           <div className="border-b border-neutral-200 bg-white px-5 py-4">
+            <DemoScenarioBar
+              activeAction={activeAction}
+              onLoadPreset={handleLoadPreset}
+              presets={demoPresets}
+              selectedPresetId={selectedPresetId}
+            />
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               {dashboardMetrics.map((metric) => (
                 <Metric key={metric.label} label={metric.label} value={metric.value} />
@@ -484,6 +534,13 @@ export function GridVisualization() {
             onSelectStep={handleSelectStep}
             onTogglePlayback={handleTogglePlayback}
             playbackSpeed={playbackSpeed}
+          />
+
+          <DemoSummaryPanel
+            cascade={cascadeResult}
+            mitigation={mitigation}
+            prediction={prediction}
+            preset={demoPresets.find((preset) => preset.id === selectedPresetId) ?? null}
           />
 
           <div className="h-[720px] min-h-[560px] flex-1">
@@ -542,6 +599,7 @@ export function GridVisualization() {
             setPrediction(null);
             setMitigation(null);
             setRecommendationCascades(new Map());
+            setSelectedPresetId(null);
           }}
           onPredictRisk={handlePredictRisk}
           onRunCascade={handleRunCascade}
@@ -570,6 +628,12 @@ const operatingConditions: Record<OperatingProfileKey, ApiOperatingCondition> = 
     line_rating_multiplier: 0.45,
     dispatch_profile: "south_reduced",
   },
+  critical: {
+    load_multiplier: 1.25,
+    generation_multiplier: 1.0,
+    line_rating_multiplier: 0.35,
+    dispatch_profile: "balanced",
+  },
   severe: {
     load_multiplier: 1.5,
     generation_multiplier: 0.8,
@@ -577,6 +641,33 @@ const operatingConditions: Record<OperatingProfileKey, ApiOperatingCondition> = 
     dispatch_profile: "south_heavy",
   },
 };
+
+function profileForCondition(condition: ApiOperatingCondition): OperatingProfileKey {
+  const match = Object.entries(operatingConditions).find(
+    ([, profile]) =>
+      profile.load_multiplier === condition.load_multiplier &&
+      profile.generation_multiplier === condition.generation_multiplier &&
+      profile.line_rating_multiplier === condition.line_rating_multiplier &&
+      profile.dispatch_profile === condition.dispatch_profile,
+  );
+
+  return (match?.[0] as OperatingProfileKey | undefined) ?? "baseline";
+}
+
+function findPresetSelection(
+  preset: ApiDemoPreset,
+  flowData: { nodes: GridNode[]; edges: GridLine[] },
+): SelectedGridElement {
+  const failure = preset.initial_failure;
+
+  if (failure.component_type === "line") {
+    const edge = flowData.edges.find((item) => item.id === failure.component_id);
+    return edge ? { kind: "line", item: edge } : null;
+  }
+
+  const node = flowData.nodes.find((item) => item.id === failure.component_id);
+  return node ? { kind: "node", item: node } : null;
+}
 
 function toRiskPrediction(response: ApiPredictionResponse): RiskPrediction {
   return {
@@ -642,6 +733,154 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded border border-neutral-200 bg-neutral-50 px-4 py-3">
       <div className="text-xs font-medium text-neutral-500">{label}</div>
       <div className="mt-1 text-xl font-semibold text-neutral-950">{value}</div>
+    </div>
+  );
+}
+
+function DemoScenarioBar({
+  activeAction,
+  onLoadPreset,
+  presets,
+  selectedPresetId,
+}: {
+  activeAction: ActiveAction;
+  onLoadPreset: (preset: ApiDemoPreset) => void;
+  presets: ApiDemoPreset[];
+  selectedPresetId: string | null;
+}) {
+  if (presets.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mb-4 rounded border border-neutral-200 bg-neutral-50 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-neutral-950">Demo Scenarios</h2>
+          <p className="mt-1 text-xs leading-5 text-neutral-600">
+            Load a deterministic simulator-backed scenario for the presentation path.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {presets.map((preset) => (
+            <button
+              className={`rounded border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                preset.id === selectedPresetId
+                  ? "border-red-700 bg-red-700 text-white"
+                  : "border-neutral-300 bg-white text-neutral-800 hover:border-red-700"
+              }`}
+              disabled={activeAction !== null}
+              key={preset.id}
+              onClick={() => onLoadPreset(preset)}
+              title={preset.summary}
+              type="button"
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
+      </div>
+      {selectedPresetId ? (
+        <p className="mt-3 text-xs leading-5 text-neutral-600">
+          {presets.find((preset) => preset.id === selectedPresetId)?.summary}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function DemoSummaryPanel({
+  cascade,
+  mitigation,
+  prediction,
+  preset,
+}: {
+  cascade: ApiCascadeResponse | null;
+  mitigation: MitigationResult | null;
+  prediction: RiskPrediction | null;
+  preset: ApiDemoPreset | null;
+}) {
+  if (!preset && !prediction && !cascade && !mitigation) {
+    return null;
+  }
+
+  const bestRecommendation = mitigation?.recommendations[0] ?? null;
+
+  return (
+    <section className="border-b border-neutral-200 bg-white px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-neutral-950">Demo Result Summary</h2>
+          <p className="mt-1 text-xs leading-5 text-neutral-600">
+            {preset ? preset.name : "Current scenario"} comparison for prediction, actual cascade, and mitigation.
+          </p>
+        </div>
+        {preset ? (
+          <div className="text-xs font-medium text-neutral-600">
+            Expected: {preset.expected_outcome.cascade_depth} depth,{" "}
+            {preset.expected_outcome.load_lost_percent.toFixed(1)}% load lost
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <SummaryCard
+          rows={[
+            ["Cascade probability", prediction ? `${(prediction.cascadeProbability * 100).toFixed(0)}%` : "Run prediction"],
+            ["Predicted load loss", prediction ? `${prediction.predictedLoadLostPercent.toFixed(1)}%` : "Run prediction"],
+          ]}
+          title="Prediction"
+        />
+        <SummaryCard
+          rows={[
+            ["Cascade occurred", cascade ? (cascade.cascade_depth > 0 ? "Yes" : "No") : "Run cascade"],
+            ["Actual load loss", cascade ? `${cascade.final_metrics.load_lost_percent.toFixed(1)}%` : "Run cascade"],
+            ["Cascade depth", cascade ? cascade.cascade_depth.toString() : "Run cascade"],
+            ["Failed lines", cascade ? cascade.final_metrics.failed_lines.toString() : "Run cascade"],
+          ]}
+          title="Actual"
+        />
+        <SummaryCard
+          rows={[
+            ["Recommended action", bestRecommendation?.description ?? "Find mitigation"],
+            [
+              "Mitigated load loss",
+              bestRecommendation ? `${bestRecommendation.outcome.loadLostPercent.toFixed(1)}%` : "Find mitigation",
+            ],
+            [
+              "Improvement",
+              bestRecommendation
+                ? `${bestRecommendation.improvement.loadLossReductionPercentPoints.toFixed(1)} pts`
+                : "Find mitigation",
+            ],
+          ]}
+          title="Mitigation"
+        />
+      </div>
+    </section>
+  );
+}
+
+function SummaryCard({
+  rows,
+  title,
+}: {
+  rows: Array<[string, string]>;
+  title: string;
+}) {
+  return (
+    <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        {title}
+      </h3>
+      <dl className="mt-2 grid gap-2">
+        {rows.map(([label, value]) => (
+          <div className="grid gap-1 text-sm" key={label}>
+            <dt className="text-xs text-neutral-500">{label}</dt>
+            <dd className="font-semibold text-neutral-950">{value}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

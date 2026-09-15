@@ -34,7 +34,7 @@ export type CascadeSummary = {
   terminationReason: string;
 };
 
-export type OperatingProfileKey = "baseline" | "stressed" | "severe";
+export type OperatingProfileKey = "baseline" | "stressed" | "critical" | "severe";
 export type ActiveAction =
   | null
   | "predict"
@@ -264,6 +264,7 @@ function PanelActions({
         >
           <option value="baseline">Baseline</option>
           <option value="stressed">Stressed</option>
+          <option value="critical">Critical Demo</option>
           <option value="severe">Severe</option>
         </select>
       </label>

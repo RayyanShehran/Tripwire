@@ -152,6 +152,24 @@ export type ApiMitigationResponse = {
   scoring_weights: Record<string, number>;
 };
 
+export type ApiDemoPreset = {
+  id: string;
+  name: string;
+  summary: string;
+  initial_failure: {
+    component_type: ApiComponentType;
+    component_id: string;
+  };
+  operating_condition: ApiOperatingCondition;
+  expected_outcome: {
+    cascade_depth: number;
+    load_lost_percent: number;
+    failed_lines: number;
+    mitigation_expected: boolean;
+  };
+  suggested_steps: string[];
+};
+
 const displayStatuses: Record<ApiStatus, GridStatus> = {
   healthy: "Healthy",
   stressed: "Stressed",
@@ -169,6 +187,19 @@ export async function fetchGrid(apiBaseUrl: string): Promise<ApiGridResponse> {
   }
 
   return (await response.json()) as ApiGridResponse;
+}
+
+export async function fetchDemoPresets(apiBaseUrl: string): Promise<ApiDemoPreset[]> {
+  const response = await fetch(`${apiBaseUrl}/api/demo-presets`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, "Unable to load demo presets"));
+  }
+
+  const payload = (await response.json()) as { presets: ApiDemoPreset[] };
+  return payload.presets;
 }
 
 export async function simulateFailure(
