@@ -3,10 +3,12 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from time import perf_counter
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app.config import get_settings
+from app.config import get_settings, validate_settings
 from app.ml.dataset import ScenarioCandidate, ScenarioConfig, create_operating_grid
 from app.ml.inference import (
     ModelNotTrainedError,
@@ -26,7 +28,8 @@ from app.simulation.scenario import ComponentFailure, get_baseline_grid
 from app.simulation.scenario import simulate_failure as simulate_single_failure
 
 settings = get_settings()
-logging.basicConfig(level=settings.log_level, format="%(levelname)s %(name)s %(message)s")
+validate_settings(settings)
+logging.basicConfig(level=settings.log_level.upper(), format="%(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("tripwire.api")
 
 
@@ -35,9 +38,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info(
         "starting Tripwire API allowed_origins=%s model_dir=%s data_dir=%s",
         settings.allowed_origins,
-        settings.model_dir,
-        settings.data_dir,
+        settings.model_path,
+        settings.data_path,
     )
+    get_baseline_grid()
+    load_model_bundle(settings.model_path)
+    logger.info("Tripwire API startup validation complete")
     yield
 
 
@@ -89,6 +95,15 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.exception_handler(Exception)
+async def unexpected_exception_handler(_, exc: Exception) -> JSONResponse:
+    logger.exception("unexpected API error")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Unexpected server error. Check backend logs."},
+    )
+
+
 @app.get("/ready")
 def ready() -> dict:
     checks: dict[str, str] = {}
@@ -101,7 +116,7 @@ def ready() -> dict:
         raise HTTPException(status_code=503, detail={"status": "failed", "checks": checks}) from exc
 
     try:
-        load_model_bundle(settings.model_dir)
+        load_model_bundle(settings.model_path)
         checks["models"] = "ok"
     except ModelNotTrainedError as exc:
         checks["models"] = "missing"
@@ -114,10 +129,13 @@ def ready() -> dict:
 @app.get("/api/grid")
 def get_grid() -> dict:
     logger.info("grid baseline requested")
+    start = perf_counter()
     try:
         return get_baseline_grid()
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    finally:
+        logger.info("grid baseline completed elapsed_ms=%.2f", _elapsed_ms(start))
 
 
 @app.get("/api/demo-presets")
@@ -133,6 +151,7 @@ def simulate_failure(request: FailureRequest) -> dict:
         request.component_type,
         request.component_id,
     )
+    start = perf_counter()
     try:
         return simulate_single_failure(
             ComponentFailure(request.component_type, request.component_id)
@@ -141,6 +160,8 @@ def simulate_failure(request: FailureRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    finally:
+        logger.info("single failure completed elapsed_ms=%.2f", _elapsed_ms(start))
 
 
 @app.post("/api/reset")
@@ -165,6 +186,7 @@ def run_cascade(request: CascadeRequest) -> dict:
         request.max_steps,
         request.operating_condition.model_dump(),
     )
+    start = perf_counter()
     condition = request.operating_condition
     config = ScenarioConfig(
         load_multiplier=condition.load_multiplier,
@@ -185,6 +207,8 @@ def run_cascade(request: CascadeRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        logger.info("cascade completed elapsed_ms=%.2f", _elapsed_ms(start))
 
 
 @app.post("/api/predict")
@@ -195,6 +219,7 @@ def predict_risk(request: PredictionRequest) -> dict:
         request.component_id,
         request.operating_condition.model_dump(),
     )
+    start = perf_counter()
     condition = request.operating_condition
     try:
         return predict_from_scenario(
@@ -204,7 +229,7 @@ def predict_risk(request: PredictionRequest) -> dict:
             generation_multiplier=condition.generation_multiplier,
             line_rating_multiplier=condition.line_rating_multiplier,
             dispatch_profile=condition.dispatch_profile,
-            model_dir=settings.model_dir,
+            model_dir=settings.model_path,
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -212,6 +237,8 @@ def predict_risk(request: PredictionRequest) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (PredictionInputError, KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        logger.info("prediction completed elapsed_ms=%.2f", _elapsed_ms(start))
 
 
 @app.post("/api/recommend")
@@ -224,6 +251,7 @@ def recommend_actions(request: RecommendationRequest) -> dict:
         request.top_n,
         request.operating_condition.model_dump(),
     )
+    start = perf_counter()
     try:
         return recommend_mitigations(
             component_type=request.component_type,
@@ -236,3 +264,9 @@ def recommend_actions(request: RecommendationRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        logger.info("recommendation completed elapsed_ms=%.2f", _elapsed_ms(start))
+
+
+def _elapsed_ms(start: float) -> float:
+    return (perf_counter() - start) * 1000
