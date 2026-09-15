@@ -128,6 +128,8 @@ export function InfoPanel({
           onSimulateRecommendation={onSimulateRecommendation}
         />
         <CascadeSummaryPanel summary={cascadeSummary} />
+        <HelpPanel />
+        <MethodologyPanel />
       </aside>
     );
   }
@@ -174,6 +176,8 @@ export function InfoPanel({
           onSimulateRecommendation={onSimulateRecommendation}
         />
         <CascadeSummaryPanel summary={cascadeSummary} />
+        <HelpPanel />
+        <MethodologyPanel />
       </aside>
     );
   }
@@ -218,6 +222,8 @@ export function InfoPanel({
         onSimulateRecommendation={onSimulateRecommendation}
       />
       <CascadeSummaryPanel summary={cascadeSummary} />
+      <HelpPanel />
+      <MethodologyPanel />
     </aside>
   );
 }
@@ -444,6 +450,66 @@ function CascadeSummaryPanel({ summary }: { summary: CascadeSummary | null }) {
         <Row label="Load lost" value={`${summary.loadLostPercent.toFixed(1)}%`} />
         <Row label="Failed components" value={summary.failedComponents.toString()} />
       </dl>
+    </div>
+  );
+}
+
+function HelpPanel() {
+  return (
+    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
+      <h3 className="text-sm font-semibold text-neutral-950">Terms</h3>
+      <dl className="mt-3 grid gap-3 text-sm">
+        <HelpTerm
+          term="Line loading"
+          definition="Percent of a transmission line capacity currently used."
+        />
+        <HelpTerm
+          term="Unserved load"
+          definition="Customer demand disconnected by outages or islanding."
+        />
+        <HelpTerm
+          term="Cascade depth"
+          definition="Number of secondary failure rounds after the initial outage."
+        />
+        <HelpTerm
+          term="Cascade probability"
+          definition="ML estimate that an initial failure will trigger secondary failures."
+        />
+        <HelpTerm
+          term="Reserve margin"
+          definition="Available generation capacity above current demand."
+        />
+        <HelpTerm
+          term="Mitigation"
+          definition="A simulated action that reduces load loss or failed components."
+        />
+      </dl>
+    </div>
+  );
+}
+
+function HelpTerm({ definition, term }: { definition: string; term: string }) {
+  return (
+    <div>
+      <dt className="font-semibold text-neutral-900">{term}</dt>
+      <dd className="mt-1 leading-5 text-neutral-600">{definition}</dd>
+    </div>
+  );
+}
+
+function MethodologyPanel() {
+  return (
+    <div className="mt-6 rounded border border-neutral-200 bg-white p-4">
+      <h3 className="text-sm font-semibold text-neutral-950">About Tripwire</h3>
+      <p className="mt-2 text-sm leading-6 text-neutral-600">
+        Tripwire combines pandapower power-flow simulation, deterministic
+        cascading-failure modeling, synthetic scenario generation, ML risk
+        prediction, and simulation-based mitigation evaluation.
+      </p>
+      <p className="mt-2 text-xs leading-5 text-neutral-500">
+        Limitations: synthetic grid, synthetic training data, not utility
+        validated, and not intended for operational deployment.
+      </p>
     </div>
   );
 }

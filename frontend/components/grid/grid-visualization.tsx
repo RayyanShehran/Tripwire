@@ -785,7 +785,22 @@ function DemoScenarioBar({
           {presets.find((preset) => preset.id === selectedPresetId)?.summary}
         </p>
       ) : null}
+      <div className="mt-3 flex flex-wrap gap-3 border-t border-neutral-200 pt-3 text-xs text-neutral-600">
+        <StatusLegend label="Healthy" color="bg-emerald-500" />
+        <StatusLegend label="Stressed" color="bg-amber-400" />
+        <StatusLegend label="Overloaded" color="bg-orange-500" />
+        <StatusLegend label="Failed" color="bg-red-700" />
+      </div>
     </div>
+  );
+}
+
+function StatusLegend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+      {label}
+    </span>
   );
 }
 
