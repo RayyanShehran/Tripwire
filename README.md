@@ -2,9 +2,9 @@
 
 Tripwire is a web-based power-grid cascading failure simulation and decision-support platform.
 
-This repository currently contains the first working local version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, a deterministic cascading-failure engine, and a Next.js frontend that renders the network with React Flow.
+This repository currently contains the first working local version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, a deterministic cascading-failure engine, baseline scikit-learn risk models trained on synthetic Tripwire scenarios, and a Next.js frontend that renders the network with React Flow.
 
-Machine-learning prediction and mitigation recommendation features are intentionally not implemented yet.
+Mitigation recommendation features are intentionally not implemented yet.
 
 ## Project Structure
 
@@ -12,6 +12,7 @@ Machine-learning prediction and mitigation recommendation features are intention
 tripwire/
   frontend/      Next.js, TypeScript, Tailwind CSS, React Flow, Recharts
   backend/       FastAPI service for grid simulation APIs
+  backend/models Saved baseline ML pipelines and metadata
   docs/          Architecture and project documentation
 ```
 
@@ -20,7 +21,7 @@ tripwire/
 Tripwire is split into a browser frontend and a Python API backend.
 
 - The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, single-component failure controls, and cascade timeline playback.
-- The backend exposes stateless API endpoints for health checks, the solved baseline grid, one-off component failure simulation, deterministic cascade simulation, and baseline reset.
+- The backend exposes stateless API endpoints for health checks, the solved baseline grid, one-off component failure simulation, deterministic cascade simulation, baseline reset, and synthetic-scenario ML risk prediction.
 - The frontend communicates with the backend through the `NEXT_PUBLIC_API_BASE_URL` environment variable.
 
 Current backend libraries:
@@ -94,6 +95,40 @@ Analyze the generated CSV:
 
 The diagnostics report dataset size, positive cascade rate, severity distribution, feature ranges, constant columns, imbalanced categorical values, missing values, non-finite values, and duplicate scenario IDs.
 
+## Baseline ML Models
+
+Tripwire trains two baseline models from the generated synthetic scenario dataset:
+
+- Cascade classifier: predicts the probability that an initial outage causes at least one secondary failure.
+- Load-loss regressor: predicts final load lost percentage after the full cascade.
+
+Training uses a single authoritative pre-failure feature list. It excludes post-cascade targets such as cascade depth, failed components, final served/unserved load, termination reason, and severity.
+
+Train models from `tripwire/backend`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\train_models.py
+```
+
+Artifacts are written to:
+
+```text
+backend/models/cascade_classifier.joblib
+backend/models/load_loss_regressor.joblib
+backend/models/model_metadata.json
+```
+
+Current risk thresholds are based on cascade probability:
+
+```text
+LOW: 0.00 <= p < 0.25
+MODERATE: 0.25 <= p < 0.50
+HIGH: 0.50 <= p < 0.75
+CRITICAL: 0.75 <= p <= 1.00
+```
+
+This ML risk level is separate from load-loss severity labels. These models are trained on Tripwire's synthetic simulation scenarios and should not be described as utility-grade or real-world blackout prediction models.
+
 ## Current Grid Model
 
 The backend creates a small 230 kV teaching network with:
@@ -121,6 +156,7 @@ POST /api/failure
 POST /api/cascade
 POST /api/reset
 GET /api/reset
+POST /api/predict
 ```
 
 Scenario endpoints do not share hidden simulation state:
@@ -234,6 +270,17 @@ Invoke-RestMethod http://127.0.0.1:8000/api/cascade `
 
 The cascade engine stores every simulated step in the response. The frontend keeps that response in memory and lets the user step through it without requesting a new backend simulation.
 
+Predict cascade risk before running a simulation:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/api/predict `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"component_type":"line","component_id":"line-101","operating_condition":{"load_multiplier":1.5,"generation_multiplier":1.0,"line_rating_multiplier":0.32,"dispatch_profile":"balanced"}}'
+```
+
+The prediction endpoint constructs only the pre-failure scenario features and then runs the saved ML pipelines. It does not run the cascade to derive the answer.
+
 ### Frontend
 
 From `tripwire/frontend`:
@@ -289,11 +336,13 @@ Implemented:
 - Offline scenario dataset generation.
 - Dataset diagnostics script.
 - CSV and metadata output for future ML training.
+- Baseline scikit-learn model training.
+- Saved classifier/regressor pipelines and model metadata.
+- `POST /api/predict` endpoint for synthetic-scenario cascade risk prediction.
+- Frontend prediction panel for selected lines and buses.
 - Backend and frontend ignore files.
 
 Not implemented yet:
 
 - Interactive grid editor.
-- Machine-learning prediction.
-- Machine-learning model training.
 - Mitigation recommendation engine.

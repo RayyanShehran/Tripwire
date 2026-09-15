@@ -14,6 +14,7 @@ The frontend is a Next.js application written in TypeScript. It is responsible f
 - Displaying solved operating metrics returned by the backend.
 - Displaying cascade timeline playback from the stored backend response.
 - Displaying current-step cascade metrics and final summary metrics.
+- Displaying baseline ML risk predictions for the selected component.
 - Displaying future decision-support metrics.
 - Calling the FastAPI backend through a configurable API base URL.
 
@@ -36,6 +37,7 @@ The backend is a FastAPI application. It is responsible for:
 - Returning the healthy baseline through reset endpoints.
 - Returning step-by-step cascade state and severity metrics.
 - Generating offline CSV scenario datasets for future ML training.
+- Training and serving baseline ML predictions from synthetic Tripwire scenarios.
 
 Core backend packages:
 
@@ -52,7 +54,12 @@ Grid logic lives under `backend/app/simulation/` instead of inside API route han
 - `cascade.py` runs deterministic cascading-failure simulations from one initial component failure.
 - `scenario.py` builds stateless single-failure scenarios from a fresh baseline and wraps solved or blackout results with scenario metadata.
 - `app/ml/dataset.py` generates machine-learning-ready scenario rows from configurable pre-failure operating profiles and post-cascade targets.
+- `app/ml/features.py` defines the authoritative pre-failure model feature list and feature-frame builders.
+- `app/ml/train.py` trains and evaluates baseline scikit-learn classifier/regressor pipelines.
+- `app/ml/inference.py` loads saved pipelines and produces bounded prediction responses.
+- `app/ml/schemas.py` centralizes ML targets, model version, and cascade-risk thresholds.
 - `scripts/analyze_dataset.py` reports data-quality diagnostics for a generated CSV without training a model.
+- `scripts/train_models.py` trains and saves model artifacts from a generated CSV.
 
 The current grid is a single-voltage 230 kV teaching network. This avoids invalid direct line connections across voltage levels while keeping the topology easy to inspect.
 
@@ -144,6 +151,7 @@ POST /api/failure
 POST /api/cascade
 POST /api/reset
 GET /api/reset
+POST /api/predict
 ```
 
 Endpoint lifecycle rules:
@@ -154,6 +162,7 @@ POST /api/failure  -> fresh baseline + one requested outage
 POST /api/cascade  -> fresh baseline + one initial outage + automatic secondary trips
 POST /api/reset    -> healthy solved baseline
 GET /api/reset     -> healthy solved baseline
+POST /api/predict  -> pre-failure features + saved ML pipelines
 ```
 
 No endpoint inherits outages from a previous request. This keeps repeated tests deterministic and avoids hidden process-level scenario state.
@@ -219,6 +228,23 @@ A source/slack bus outage is represented as a valid HTTP 200 blackout scenario. 
 ```
 
 The cascade endpoint returns the initial failure, termination reason, cascade depth, all preserved steps, and final metrics such as load lost percentage, failed component count, failed line count, and peak line loading.
+
+`POST /api/predict` accepts an initial component and operating condition:
+
+```json
+{
+  "component_type": "line",
+  "component_id": "line-101",
+  "operating_condition": {
+    "load_multiplier": 1.5,
+    "generation_multiplier": 1.0,
+    "line_rating_multiplier": 0.32,
+    "dispatch_profile": "balanced"
+  }
+}
+```
+
+The endpoint constructs the same pre-failure feature row used during training, runs the saved classifier and regressor pipelines, and returns cascade probability, predicted load lost percentage, risk level, and model version. It does not run the cascade simulation to derive the answer.
 
 ## Dataset Pipeline
 
@@ -320,3 +346,53 @@ Diagnostics can be run with:
 ```
 
 The diagnostics script prints dataset size, positive cascade rate, severity distribution, feature ranges, potential constant columns, highly imbalanced categorical values, missing/non-finite value counts, and duplicate count. It intentionally does not train a model.
+
+## Machine Learning Methodology
+
+Current model targets:
+
+```text
+Classification: cascade_happened
+Regression: load_lost_percent
+```
+
+The feature list is defined programmatically in `app/ml/features.py` and includes only pre-failure columns from the dataset. It excludes targets and post-cascade values such as cascade depth, failed component counts, final served/unserved load, termination reason, severity label, and final load lost.
+
+Categorical features are handled with `OneHotEncoder(handle_unknown="ignore")`. Numeric features pass through a `ColumnTransformer`; scaled pipelines are used for linear models. The preprocessing is inside each scikit-learn `Pipeline`, so transformations are fit only on the training split.
+
+The default split is `GroupShuffleSplit` grouped by initial failed component when both train and test splits contain both cascade classes. This reduces leakage from near-duplicate operating scenarios for the same failed component appearing in both train and test. If a small test dataset cannot support that split, training falls back to a stratified random split.
+
+Current baseline model families:
+
+```text
+Classifier: Logistic Regression, Random Forest Classifier
+Regressor: Ridge Regression, Random Forest Regressor
+```
+
+Champion selection is metric-based:
+
+```text
+Classifier: highest F1, then ROC AUC and recall
+Regressor: lowest MAE
+```
+
+Saved artifacts:
+
+```text
+backend/models/cascade_classifier.joblib
+backend/models/load_loss_regressor.joblib
+backend/models/model_metadata.json
+```
+
+Cascade risk levels are probability bands:
+
+```text
+LOW: 0.00 <= p < 0.25
+MODERATE: 0.25 <= p < 0.50
+HIGH: 0.50 <= p < 0.75
+CRITICAL: 0.75 <= p <= 1.00
+```
+
+These risk levels are separate from load-loss severity labels. Feature importance values are predictive associations within Tripwire's synthetic simulation dataset, not causal statements about real power grids.
+
+The current models are not trained on operational grid data and should not be presented as utility-grade reliability tools.
