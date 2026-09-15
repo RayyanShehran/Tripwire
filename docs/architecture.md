@@ -15,6 +15,7 @@ The frontend is a Next.js application written in TypeScript. It is responsible f
 - Displaying cascade timeline playback from the stored backend response.
 - Displaying current-step cascade metrics and final summary metrics.
 - Displaying baseline ML risk predictions for the selected component.
+- Displaying simulation-validated mitigation recommendations for selected components.
 - Displaying future decision-support metrics.
 - Calling the FastAPI backend through a configurable API base URL.
 
@@ -38,6 +39,7 @@ The backend is a FastAPI application. It is responsible for:
 - Returning step-by-step cascade state and severity metrics.
 - Generating offline CSV scenario datasets for future ML training.
 - Training and serving baseline ML predictions from synthetic Tripwire scenarios.
+- Generating and ranking mitigation candidates through repeated deterministic cascade simulation.
 
 Core backend packages:
 
@@ -58,6 +60,7 @@ Grid logic lives under `backend/app/simulation/` instead of inside API route han
 - `app/ml/train.py` trains and evaluates baseline scikit-learn classifier/regressor pipelines.
 - `app/ml/inference.py` loads saved pipelines and produces bounded prediction responses.
 - `app/ml/schemas.py` centralizes ML targets, model version, and cascade-risk thresholds.
+- `simulation/mitigation.py` generates bounded mitigation candidates, simulates each one, and ranks them against the no-mitigation baseline.
 - `scripts/analyze_dataset.py` reports data-quality diagnostics for a generated CSV without training a model.
 - `scripts/train_models.py` trains and saves model artifacts from a generated CSV.
 
@@ -152,6 +155,7 @@ POST /api/cascade
 POST /api/reset
 GET /api/reset
 POST /api/predict
+POST /api/recommend
 ```
 
 Endpoint lifecycle rules:
@@ -163,6 +167,7 @@ POST /api/cascade  -> fresh configured profile + one initial outage + automatic 
 POST /api/reset    -> healthy solved baseline
 GET /api/reset     -> healthy solved baseline
 POST /api/predict  -> pre-failure features + saved ML pipelines
+POST /api/recommend -> baseline simulation + bounded intervention simulations
 ```
 
 No endpoint inherits outages from a previous request. This keeps repeated tests deterministic and avoids hidden process-level scenario state.
@@ -251,6 +256,25 @@ The cascade endpoint returns the initial failure, termination reason, cascade de
 ```
 
 The endpoint constructs the same pre-failure feature row used during training, runs the saved classifier and regressor pipelines, and returns cascade probability, predicted load lost percentage, risk level, and model version. It does not run the cascade simulation to derive the answer.
+
+`POST /api/recommend` accepts the same component and operating-condition shape plus candidate limits:
+
+```json
+{
+  "component_type": "line",
+  "component_id": "line-101",
+  "operating_condition": {
+    "load_multiplier": 1.25,
+    "generation_multiplier": 1.0,
+    "line_rating_multiplier": 0.35,
+    "dispatch_profile": "balanced"
+  },
+  "max_candidates": 24,
+  "top_n": 3
+}
+```
+
+It returns the no-mitigation baseline, beneficial recommendations sorted by score, simulated outcomes, improvement values, scoring weights, candidate counts, runtime, and a replayable cascade result for each recommendation.
 
 ## Dataset Pipeline
 
@@ -402,3 +426,38 @@ CRITICAL: 0.75 <= p <= 1.00
 These risk levels are separate from load-loss severity labels. Feature importance values are predictive associations within Tripwire's synthetic simulation dataset, not causal statements about real power grids.
 
 The current models are not trained on operational grid data and should not be presented as utility-grade reliability tools.
+
+## Mitigation Methodology
+
+Mitigation is simulation-validated. The module does not use an LLM to invent actions and does not use ML predictions as the source of truth for ranking.
+
+Implemented candidate types:
+
+```text
+generator_redispatch
+load_shedding
+```
+
+Generator redispatch shifts 5% or 10% output between `gen-south` and `gen-harbor` and rejects actions that would exceed configured available capacity or create negative generation. Controlled load shedding sheds 2%, 5%, or 10% at individual load buses or across all load buses and rejects percentages above the configured limit.
+
+Per request flow:
+
+1. Build the fresh operating profile.
+2. Simulate the requested initial failure with no mitigation.
+3. Generate at most the configured number of feasible candidates.
+4. For each candidate, rebuild the fresh operating profile.
+5. Apply the mitigation before the initial failure.
+6. Run the full deterministic cascade.
+7. Compare the simulated outcome against the no-mitigation baseline.
+8. Return only beneficial recommendations.
+
+Centralized scoring weights:
+
+```text
+LOAD_LOSS_REDUCTION_WEIGHT = 10.0
+FAILED_COMPONENT_REDUCTION_WEIGHT = 2.0
+CASCADE_DEPTH_REDUCTION_WEIGHT = 3.0
+INTERVENTION_COST_WEIGHT = 0.25
+```
+
+The scoring function prioritizes load-loss reduction, then fewer failed components, then lower cascade depth, while applying a small penalty for intervention size. Returned recommendations should be described as "Recommended based on Tripwire simulation" and not as guaranteed blackout prevention.
