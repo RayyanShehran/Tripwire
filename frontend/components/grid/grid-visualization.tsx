@@ -946,16 +946,16 @@ function DemoSummaryPanel({
   const bestRecommendation = mitigation?.recommendations[0] ?? null;
 
   return (
-    <section className="border-b border-neutral-200 bg-white px-5 py-4">
+    <section className="border-b border-slate-800 bg-slate-900/80 px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-950">Demo Result Summary</h2>
-          <p className="mt-1 text-xs leading-5 text-neutral-600">
+          <h2 className="text-sm font-semibold text-slate-50">Demo Result Summary</h2>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
             {preset ? preset.name : "Current scenario"} comparison for prediction, actual cascade, and mitigation.
           </p>
         </div>
         {preset ? (
-          <div className="text-xs font-medium text-neutral-600">
+          <div className="rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-400">
             Expected: {preset.expected_outcome.cascade_depth} depth,{" "}
             {preset.expected_outcome.load_lost_percent.toFixed(1)}% load lost
           </div>
@@ -1008,15 +1008,15 @@ function SummaryCard({
   title: string;
 }) {
   return (
-    <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+    <div className="rounded-md border border-slate-800 bg-slate-950/80 p-3">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
         {title}
       </h3>
       <dl className="mt-2 grid gap-2">
         {rows.map(([label, value]) => (
           <div className="grid gap-1 text-sm" key={label}>
-            <dt className="text-xs text-neutral-500">{label}</dt>
-            <dd className="font-semibold text-neutral-950">{value}</dd>
+            <dt className="text-xs text-slate-500">{label}</dt>
+            <dd className="font-semibold text-slate-100">{value}</dd>
           </div>
         ))}
       </dl>

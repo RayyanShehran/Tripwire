@@ -33,13 +33,13 @@ export function CascadeTimeline({
   const currentStep = cascade.steps[currentStepIndex] ?? cascade.steps[0];
 
   return (
-    <section className="border-b border-neutral-200 bg-white px-5 py-3">
+    <section className="border-b border-slate-800 bg-slate-950 px-5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-950">
+          <h2 className="text-sm font-semibold text-slate-50">
             Cascade Step {currentStepIndex + 1} of {totalSteps}
           </h2>
-          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
+          <p className="mt-1 text-xs font-medium uppercase tracking-[0.16em] text-cyan-300">
             {formatEvent(currentStep.event)}
           </p>
         </div>
@@ -54,7 +54,7 @@ export function CascadeTimeline({
           playbackSpeed={playbackSpeed}
           totalSteps={totalSteps}
         />
-        <div className="text-right text-xs text-neutral-600">
+        <div className="text-right text-xs text-slate-500">
           <div>Termination: {formatReason(cascade.termination_reason)}</div>
           <div>Depth: {cascade.cascade_depth}</div>
         </div>
@@ -98,7 +98,7 @@ function PlaybackControls({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button
-        className="rounded border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:cursor-not-allowed disabled:text-neutral-400"
+        className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:text-slate-600"
         disabled={!canGoPrevious}
         onClick={onPreviousStep}
         title="Show previous cascade step"
@@ -107,7 +107,7 @@ function PlaybackControls({
         Previous
       </button>
       <button
-        className="rounded bg-neutral-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+        className="rounded-md border border-cyan-400 bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
         disabled={totalSteps <= 1 || (!canGoNext && !isPlaying)}
         onClick={onTogglePlayback}
         title={isPlaying ? "Pause cascade playback" : "Play cascade playback"}
@@ -116,7 +116,7 @@ function PlaybackControls({
         {isPlaying ? "Pause" : "Play"}
       </button>
       <button
-        className="rounded border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-800 disabled:cursor-not-allowed disabled:text-neutral-400"
+        className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:text-slate-600"
         disabled={!canGoNext}
         onClick={onNextStep}
         title="Show next cascade step"
@@ -124,10 +124,10 @@ function PlaybackControls({
       >
         Next
       </button>
-      <label className="flex items-center gap-2 text-xs font-medium text-neutral-600">
+      <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
         Speed
         <select
-          className="rounded border border-neutral-300 bg-white px-2 py-2 text-xs font-semibold text-neutral-800"
+          className="rounded-md border border-slate-700 bg-slate-900 px-2 py-2 text-xs font-semibold text-slate-200"
           onChange={(event) => onPlaybackSpeedChange(Number(event.target.value))}
           title="Cascade playback speed"
           value={playbackSpeed}
@@ -153,23 +153,23 @@ function TimelineItem({
   return (
     <button
       aria-current={isActive ? "step" : undefined}
-      className={`min-w-56 rounded border px-3 py-2 text-left text-sm transition focus:outline-none focus:ring-2 focus:ring-red-700 ${
+      className={`min-w-56 rounded-md border px-3 py-2 text-left text-sm transition focus:outline-none focus:ring-2 focus:ring-cyan-300/70 ${
         isActive
-          ? "border-red-700 bg-red-50"
-          : "border-neutral-200 bg-neutral-50 hover:border-neutral-300"
+          ? "border-cyan-400 bg-cyan-400/10"
+          : "border-slate-800 bg-slate-900/70 hover:border-slate-600"
       }`}
       onClick={onClick}
       title={`Show ${formatEvent(step.event)} step ${step.step}`}
       type="button"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold text-neutral-950">Step {step.step}</span>
-        <span className="text-xs text-neutral-500">{formatEvent(step.event)}</span>
+        <span className="font-semibold text-slate-50">Step {step.step}</span>
+        <span className="text-xs text-slate-500">{formatEvent(step.event)}</span>
       </div>
-      <p className="mt-2 line-clamp-2 text-xs leading-5 text-neutral-600">
+      <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
         {describeStep(step)}
       </p>
-      <div className="mt-2 text-xs font-medium text-neutral-700">
+      <div className="mt-2 text-xs font-medium text-slate-300">
         Lost {formatPercent(loadLostPercent(step))}%
       </div>
     </button>
