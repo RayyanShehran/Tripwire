@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -86,6 +86,7 @@ export function GridVisualization() {
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
   const [selected, setSelected] = useState<SelectedGridElement>(null);
+  const selectedRef = useRef<SelectedGridElement>(null);
   const [operatingProfile, setOperatingProfile] = useState<OperatingProfileKey>("baseline");
   const [prediction, setPrediction] = useState<RiskPrediction | null>(null);
   const [mitigation, setMitigation] = useState<MitigationResult | null>(null);
@@ -93,6 +94,10 @@ export function GridVisualization() {
     new Map<number, ApiCascadeResponse>(),
   );
   const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
+
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const dashboardMetrics = useMemo(() => {
     if (currentCascadeStep) {
@@ -161,13 +166,21 @@ export function GridVisualization() {
   }, [cascadeResult?.cascade_depth, currentCascadeStep, grid, prediction]);
 
   const applyGridResponse = useCallback(
-    (response: ApiGridResponse, step?: ApiCascadeStep) => {
+    (
+      response: ApiGridResponse,
+      step?: ApiCascadeStep,
+      preserveSelection?: SelectedGridElement,
+    ) => {
       const nextFlowData = toFlowData(response, step);
 
       setGrid(response);
       setNodes(nextFlowData.nodes);
       setEdges(nextFlowData.edges);
-      setSelected(null);
+      setSelected(
+        preserveSelection
+          ? findMatchingSelection(preserveSelection, nextFlowData)
+          : null,
+      );
     },
     [setEdges, setNodes],
   );
@@ -221,7 +234,7 @@ export function GridVisualization() {
 
     const step = cascadeResult.steps[currentStepIndex];
     if (step) {
-      applyGridResponse(step.grid, step);
+      applyGridResponse(step.grid, step, selectedRef.current);
     }
   }, [applyGridResponse, cascadeResult, currentStepIndex]);
 
@@ -676,6 +689,23 @@ function findPresetSelection(
   }
 
   const node = flowData.nodes.find((item) => item.id === failure.component_id);
+  return node ? { kind: "node", item: node } : null;
+}
+
+function findMatchingSelection(
+  selection: SelectedGridElement,
+  flowData: { nodes: GridNode[]; edges: GridLine[] },
+): SelectedGridElement {
+  if (!selection) {
+    return null;
+  }
+
+  if (selection.kind === "line") {
+    const edge = flowData.edges.find((item) => item.id === selection.item.id);
+    return edge ? { kind: "line", item: edge } : null;
+  }
+
+  const node = flowData.nodes.find((item) => item.id === selection.item.id);
   return node ? { kind: "node", item: node } : null;
 }
 
