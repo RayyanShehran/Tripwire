@@ -265,10 +265,10 @@ Run a deterministic cascade from an initial failure:
 Invoke-RestMethod http://127.0.0.1:8000/api/cascade `
   -Method Post `
   -ContentType "application/json" `
-  -Body '{"component_type":"line","component_id":"line-101","max_steps":20}'
+  -Body '{"component_type":"line","component_id":"line-101","max_steps":20,"operating_condition":{"load_multiplier":1.5,"generation_multiplier":1.0,"line_rating_multiplier":0.32,"dispatch_profile":"balanced"}}'
 ```
 
-The cascade engine stores every simulated step in the response. The frontend keeps that response in memory and lets the user step through it without requesting a new backend simulation.
+The cascade engine stores every simulated step in the response. The frontend keeps that response in memory and lets the user step through it without requesting a new backend simulation. If no operating condition is supplied, the cascade runs on the healthy baseline profile.
 
 Predict cascade risk before running a simulation:
 

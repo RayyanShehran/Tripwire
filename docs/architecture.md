@@ -159,7 +159,7 @@ Endpoint lifecycle rules:
 ```text
 GET /api/grid      -> healthy solved baseline
 POST /api/failure  -> fresh baseline + one requested outage
-POST /api/cascade  -> fresh baseline + one initial outage + automatic secondary trips
+POST /api/cascade  -> fresh configured profile + one initial outage + automatic secondary trips
 POST /api/reset    -> healthy solved baseline
 GET /api/reset     -> healthy solved baseline
 POST /api/predict  -> pre-failure features + saved ML pipelines
@@ -217,17 +217,23 @@ total_blackout
 
 A source/slack bus outage is represented as a valid HTTP 200 blackout scenario. The response keeps finite numeric metrics, including zero served load, full unserved demand, and 100% load lost.
 
-`POST /api/cascade` accepts the same component fields plus an optional `max_steps` value:
+`POST /api/cascade` accepts the same component fields plus an optional `max_steps` value and optional operating condition:
 
 ```json
 {
   "component_type": "line",
   "component_id": "line-101",
-  "max_steps": 20
+  "max_steps": 20,
+  "operating_condition": {
+    "load_multiplier": 1.5,
+    "generation_multiplier": 1.0,
+    "line_rating_multiplier": 0.32,
+    "dispatch_profile": "balanced"
+  }
 }
 ```
 
-The cascade endpoint returns the initial failure, termination reason, cascade depth, all preserved steps, and final metrics such as load lost percentage, failed component count, failed line count, and peak line loading.
+The cascade endpoint returns the initial failure, termination reason, cascade depth, all preserved steps, and final metrics such as load lost percentage, failed component count, failed line count, and peak line loading. Without an operating condition, it uses the baseline profile.
 
 `POST /api/predict` accepts an initial component and operating condition:
 
