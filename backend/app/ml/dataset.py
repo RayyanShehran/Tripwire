@@ -540,6 +540,19 @@ def available_generation_capacity_mw(config: ScenarioConfig) -> float:
     return _round(total)
 
 
+def build_feature_row(config: ScenarioConfig, scenario_id: str = "prediction") -> dict[str, Any]:
+    pre_failure_net = create_operating_grid(config)
+    run_power_flow(pre_failure_net)
+    pre_failure_grid = serialize_grid_state(pre_failure_net)
+    return _feature_row(
+        scenario_id=scenario_id,
+        config=config,
+        pre_failure_grid=pre_failure_grid,
+        pre_failure_net=pre_failure_net,
+        graph_features=_topology_features(pre_failure_net),
+    )
+
+
 def _build_scenario_row(
     scenario_id: str,
     config: ScenarioConfig,
