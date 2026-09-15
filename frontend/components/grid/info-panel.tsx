@@ -4,25 +4,17 @@ import type { SelectedGridElement } from "./types";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-neutral-100 py-3 text-sm last:border-0">
-      <dt className="text-neutral-500">{label}</dt>
-      <dd className="text-right font-semibold text-neutral-900">{value}</dd>
+    <div className="flex items-center justify-between gap-4 border-b border-slate-800 py-2.5 text-sm last:border-0">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-right font-semibold text-slate-100">{value}</dd>
     </div>
   );
 }
 
 type InfoPanelProps = {
   cascadeSummary: CascadeSummary | null;
-  activeAction: ActiveAction;
   mitigation: MitigationResult | null;
-  onFindMitigation: () => void;
-  onOperatingProfileChange: (profile: OperatingProfileKey) => void;
-  onPredictRisk: () => void;
-  onRunCascade: () => void;
-  onResetScenario: () => void;
   onSimulateRecommendation: (recommendation: MitigationRecommendation) => void;
-  onSimulateFailure: () => void;
-  operatingProfile: OperatingProfileKey;
   prediction: RiskPrediction | null;
   selected: SelectedGridElement;
 };
@@ -86,42 +78,20 @@ export type MitigationResult = {
 };
 
 export function InfoPanel({
-  activeAction,
   cascadeSummary,
   mitigation,
-  onFindMitigation,
-  onOperatingProfileChange,
-  onPredictRisk,
-  onRunCascade,
-  onResetScenario,
   onSimulateRecommendation,
-  onSimulateFailure,
-  operatingProfile,
   prediction,
   selected,
 }: InfoPanelProps) {
   if (!selected) {
     return (
-      <aside className="h-full border-l border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-neutral-950">Selection</h2>
-        <p className="mt-3 text-sm leading-6 text-neutral-600">
+      <aside className="h-full border-l border-slate-800 bg-slate-950 p-5">
+        <h2 className="text-lg font-semibold text-slate-50">Selection</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-500">
           Select a generator, bus, load, or transmission line to inspect its
           current solved operating state.
         </p>
-        <PanelActions
-          canSimulate={false}
-          canRunCascade={false}
-          canPredict={false}
-          canFindMitigation={false}
-          activeAction={activeAction}
-          onFindMitigation={onFindMitigation}
-          onOperatingProfileChange={onOperatingProfileChange}
-          onPredictRisk={onPredictRisk}
-          onRunCascade={onRunCascade}
-          onResetScenario={onResetScenario}
-          onSimulateFailure={onSimulateFailure}
-          operatingProfile={operatingProfile}
-        />
         <PredictionPanel prediction={prediction} />
         <MitigationPanel
           mitigation={mitigation}
@@ -138,11 +108,11 @@ export function InfoPanel({
     const node = selected.item;
 
     return (
-      <aside className="h-full border-l border-neutral-200 bg-white p-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+      <aside className="h-full border-l border-slate-800 bg-slate-950 p-5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">
           Node
         </p>
-        <h2 className="mt-1 text-lg font-semibold text-neutral-950">
+        <h2 className="mt-1 text-lg font-semibold text-slate-50">
         {node.data.name}
         </h2>
         <dl className="mt-5">
@@ -156,20 +126,6 @@ export function InfoPanel({
             <Row label="Load" value={`${node.data.loadMw} MW`} />
           ) : null}
         </dl>
-        <PanelActions
-          canSimulate
-          canRunCascade
-          canPredict
-          canFindMitigation
-          activeAction={activeAction}
-          onFindMitigation={onFindMitigation}
-          onOperatingProfileChange={onOperatingProfileChange}
-          onPredictRisk={onPredictRisk}
-          onRunCascade={onRunCascade}
-          onResetScenario={onResetScenario}
-          onSimulateFailure={onSimulateFailure}
-          operatingProfile={operatingProfile}
-        />
         <PredictionPanel prediction={prediction} />
         <MitigationPanel
           mitigation={mitigation}
@@ -185,11 +141,11 @@ export function InfoPanel({
   const line = selected.item;
 
   return (
-    <aside className="h-full border-l border-neutral-200 bg-white p-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+    <aside className="h-full border-l border-slate-800 bg-slate-950 p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">
         Transmission Line
       </p>
-      <h2 className="mt-1 text-lg font-semibold text-neutral-950">
+      <h2 className="mt-1 text-lg font-semibold text-slate-50">
         {line.data?.name ?? line.id}
       </h2>
       <dl className="mt-5">
@@ -202,20 +158,6 @@ export function InfoPanel({
         <Row label="Source" value={line.source} />
         <Row label="Target" value={line.target} />
       </dl>
-      <PanelActions
-        canSimulate
-        canRunCascade
-        canPredict
-        canFindMitigation
-        activeAction={activeAction}
-        onFindMitigation={onFindMitigation}
-        onOperatingProfileChange={onOperatingProfileChange}
-        onPredictRisk={onPredictRisk}
-        onRunCascade={onRunCascade}
-        onResetScenario={onResetScenario}
-        onSimulateFailure={onSimulateFailure}
-        operatingProfile={operatingProfile}
-      />
       <PredictionPanel prediction={prediction} />
       <MitigationPanel
         mitigation={mitigation}
@@ -232,92 +174,6 @@ function formatNullableValue(value: number | null, suffix: string) {
   return value === null ? "N/A" : `${value}${suffix}`;
 }
 
-function PanelActions({
-  canRunCascade,
-  canSimulate,
-  canPredict,
-  canFindMitigation,
-  activeAction,
-  onFindMitigation,
-  onOperatingProfileChange,
-  onPredictRisk,
-  onRunCascade,
-  onResetScenario,
-  onSimulateFailure,
-  operatingProfile,
-}: {
-  canRunCascade: boolean;
-  canSimulate: boolean;
-  canPredict: boolean;
-  canFindMitigation: boolean;
-  activeAction: ActiveAction;
-  onFindMitigation: () => void;
-  onOperatingProfileChange: (profile: OperatingProfileKey) => void;
-  onPredictRisk: () => void;
-  onRunCascade: () => void;
-  onResetScenario: () => void;
-  onSimulateFailure: () => void;
-  operatingProfile: OperatingProfileKey;
-}) {
-  return (
-    <div className="mt-6 grid gap-2">
-      <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        Prediction profile
-        <select
-          className="rounded border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold normal-case tracking-normal text-neutral-900"
-          onChange={(event) => onOperatingProfileChange(event.target.value as OperatingProfileKey)}
-          value={operatingProfile}
-        >
-          <option value="baseline">Baseline</option>
-          <option value="stressed">Stressed</option>
-          <option value="critical">Critical Demo</option>
-          <option value="severe">Severe</option>
-        </select>
-      </label>
-      <button
-        className="rounded border border-red-700 bg-white px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
-        disabled={!canPredict || activeAction !== null}
-        onClick={onPredictRisk}
-        type="button"
-      >
-        {activeAction === "predict" ? "Predicting Risk..." : "Predict Risk"}
-      </button>
-      <button
-        className="rounded border border-neutral-950 bg-white px-3 py-2 text-sm font-semibold text-neutral-950 disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
-        disabled={!canFindMitigation || activeAction !== null}
-        onClick={onFindMitigation}
-        type="button"
-      >
-        {activeAction === "mitigation" ? "Finding Mitigation..." : "Find Mitigation"}
-      </button>
-      <button
-        className="rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
-        disabled={!canSimulate || activeAction !== null}
-        onClick={onSimulateFailure}
-        type="button"
-      >
-        {activeAction === "failure" ? "Simulating Failure..." : "Simulate Failure"}
-      </button>
-      <button
-        className="rounded bg-neutral-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
-        disabled={!canRunCascade || activeAction !== null}
-        onClick={onRunCascade}
-        type="button"
-      >
-        {activeAction === "cascade" ? "Running Cascade..." : "Run Cascade"}
-      </button>
-      <button
-        className="rounded border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 disabled:cursor-not-allowed disabled:text-neutral-400"
-        disabled={activeAction !== null}
-        onClick={onResetScenario}
-        type="button"
-      >
-        {activeAction === "reset" ? "Resetting..." : "Return to Baseline"}
-      </button>
-    </div>
-  );
-}
-
 function MitigationPanel({
   mitigation,
   onSimulateRecommendation,
@@ -330,11 +186,11 @@ function MitigationPanel({
   }
 
   return (
-    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
-      <h3 className="text-sm font-semibold text-neutral-950">
+    <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/60 p-4">
+      <h3 className="text-sm font-semibold text-slate-50">
         Recommended Based on Tripwire Simulation
       </h3>
-      <p className="mt-2 text-xs leading-5 text-neutral-600">
+      <p className="mt-2 text-xs leading-5 text-slate-500">
         {mitigation.summary}
       </p>
       <dl className="mt-3">
@@ -345,22 +201,22 @@ function MitigationPanel({
       </dl>
       <div className="mt-4 grid gap-3">
         {mitigation.recommendations.length === 0 ? (
-          <p className="text-sm text-neutral-600">
+          <p className="text-sm text-slate-500">
             No bounded candidate reduced the simulated severity.
           </p>
         ) : (
           mitigation.recommendations.map((recommendation) => (
             <div
-              className="rounded border border-neutral-200 bg-white p-3"
+              className="rounded-md border border-slate-800 bg-slate-950 p-3"
               key={`${recommendation.rank}-${recommendation.description}`}
             >
-              <div className="text-xs font-semibold uppercase tracking-wide text-red-700">
+              <div className="text-xs font-semibold uppercase tracking-wide text-cyan-300">
                 Action #{recommendation.rank}
               </div>
-              <div className="mt-1 text-sm font-semibold text-neutral-950">
+              <div className="mt-1 text-sm font-semibold text-slate-50">
                 {formatActionType(recommendation.actionType)}
               </div>
-              <p className="mt-1 text-sm leading-5 text-neutral-600">
+              <p className="mt-1 text-sm leading-5 text-slate-500">
                 {recommendation.description}
               </p>
               <dl className="mt-2">
@@ -382,7 +238,7 @@ function MitigationPanel({
                 />
               </dl>
               <button
-                className="mt-3 w-full rounded bg-neutral-950 px-3 py-2 text-sm font-semibold text-white"
+                className="mt-3 w-full rounded-md bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950"
                 onClick={() => onSimulateRecommendation(recommendation)}
                 type="button"
               >
@@ -402,8 +258,8 @@ function PredictionPanel({ prediction }: { prediction: RiskPrediction | null }) 
   }
 
   return (
-    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
-      <h3 className="text-sm font-semibold text-neutral-950">Cascade Risk</h3>
+    <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/60 p-4">
+      <h3 className="text-sm font-semibold text-slate-50">Cascade Risk</h3>
       <dl className="mt-3">
         <Row
           label="Probability"
@@ -416,8 +272,8 @@ function PredictionPanel({ prediction }: { prediction: RiskPrediction | null }) 
         <Row label="Risk" value={prediction.riskLevel} />
       </dl>
       {prediction.actualCascadeOccurred !== undefined ? (
-        <div className="mt-4 border-t border-neutral-200 pt-3">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        <div className="mt-4 border-t border-slate-800 pt-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Prediction vs Actual
           </h4>
           <dl className="mt-2">
@@ -442,8 +298,8 @@ function CascadeSummaryPanel({ summary }: { summary: CascadeSummary | null }) {
   }
 
   return (
-    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
-      <h3 className="text-sm font-semibold text-neutral-950">Cascade Result</h3>
+    <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/60 p-4">
+      <h3 className="text-sm font-semibold text-slate-50">Cascade Result</h3>
       <dl className="mt-3">
         <Row label="Termination" value={formatReason(summary.terminationReason)} />
         <Row label="Depth" value={summary.cascadeDepth.toString()} />
@@ -456,8 +312,8 @@ function CascadeSummaryPanel({ summary }: { summary: CascadeSummary | null }) {
 
 function HelpPanel() {
   return (
-    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
-      <h3 className="text-sm font-semibold text-neutral-950">Terms</h3>
+    <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/60 p-4">
+      <h3 className="text-sm font-semibold text-slate-50">Terms</h3>
       <dl className="mt-3 grid gap-3 text-sm">
         <HelpTerm
           term="Line loading"
@@ -491,22 +347,22 @@ function HelpPanel() {
 function HelpTerm({ definition, term }: { definition: string; term: string }) {
   return (
     <div>
-      <dt className="font-semibold text-neutral-900">{term}</dt>
-      <dd className="mt-1 leading-5 text-neutral-600">{definition}</dd>
+      <dt className="font-semibold text-slate-200">{term}</dt>
+      <dd className="mt-1 leading-5 text-slate-500">{definition}</dd>
     </div>
   );
 }
 
 function MethodologyPanel() {
   return (
-    <div className="mt-6 rounded border border-neutral-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-neutral-950">About Tripwire</h3>
-      <p className="mt-2 text-sm leading-6 text-neutral-600">
+    <div className="mt-6 rounded-md border border-slate-800 bg-slate-950 p-4">
+      <h3 className="text-sm font-semibold text-slate-50">About Tripwire</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-500">
         Tripwire combines pandapower power-flow simulation, deterministic
         cascading-failure modeling, synthetic scenario generation, ML risk
         prediction, and simulation-based mitigation evaluation.
       </p>
-      <p className="mt-2 text-xs leading-5 text-neutral-500">
+      <p className="mt-2 text-xs leading-5 text-slate-600">
         Limitations: synthetic grid, synthetic training data, not utility
         validated, and not intended for operational deployment.
       </p>

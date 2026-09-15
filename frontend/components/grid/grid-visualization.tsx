@@ -41,6 +41,9 @@ import { statusStyles } from "./status";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
 import type { GridLine, GridNode, SelectedGridElement } from "./types";
+import { ActionButton } from "../ui/action-button";
+import { MetricCard } from "../ui/metric-card";
+import { SectionPanel } from "../ui/section-panel";
 import type {
   ActiveAction,
   MitigationRecommendation,
@@ -501,16 +504,31 @@ export function GridVisualization() {
 
   return (
     <ReactFlowProvider>
-      <section className="grid min-h-[calc(100vh-82px)] grid-cols-1 bg-neutral-100 lg:grid-cols-[1fr_340px]">
-        <div className="flex min-w-0 flex-col">
-          <div className="border-b border-neutral-200 bg-white px-5 py-4">
-            <DemoScenarioBar
-              activeAction={activeAction}
-              onLoadPreset={handleLoadPreset}
-              presets={demoPresets}
-              selectedPresetId={selectedPresetId}
-            />
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <section className="grid min-h-[calc(100vh-82px)] grid-cols-1 bg-slate-950 lg:grid-cols-[288px_minmax(0,1fr)_360px]">
+        <ControlRail
+          activeAction={activeAction}
+          onFindMitigation={handleFindMitigation}
+          onLoadPreset={handleLoadPreset}
+          onOperatingProfileChange={(profile) => {
+            setOperatingProfile(profile);
+            setPrediction(null);
+            setMitigation(null);
+            setRecommendationCascades(new Map());
+            setSelectedPresetId(null);
+          }}
+          onPredictRisk={handlePredictRisk}
+          onRunCascade={handleRunCascade}
+          onResetScenario={handleResetScenario}
+          onSimulateFailure={handleSimulateFailure}
+          operatingProfile={operatingProfile}
+          presets={demoPresets}
+          selected={selected}
+          selectedPresetId={selectedPresetId}
+        />
+
+        <div className="flex min-w-0 flex-col border-x border-slate-800">
+          <div className="border-b border-slate-800 bg-slate-900/80 px-5 py-4">
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-8">
               {dashboardMetrics.map((metric) => (
                 <Metric key={metric.label} label={metric.label} value={metric.value} />
               ))}
@@ -518,7 +536,7 @@ export function GridVisualization() {
           </div>
 
           {errorMessage && nodes.length > 0 ? (
-            <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm font-medium text-red-800">
+            <div className="border-b border-red-500/30 bg-red-950/70 px-5 py-3 text-sm font-medium text-red-100">
               {errorMessage}
             </div>
           ) : null}
@@ -542,7 +560,10 @@ export function GridVisualization() {
             preset={demoPresets.find((preset) => preset.id === selectedPresetId) ?? null}
           />
 
-          <div className="h-[720px] min-h-[560px] flex-1">
+          <div className="relative h-[720px] min-h-[560px] flex-1 bg-slate-950">
+            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-md border border-slate-800 bg-slate-950/85 px-3 py-2 text-xs text-slate-400 shadow-xl shadow-black/40">
+              Power Network
+            </div>
             {isLoading ? (
               <StateMessage title="Loading grid" message="Fetching solved grid state from the FastAPI backend." />
             ) : errorMessage && nodes.length === 0 ? (
@@ -561,7 +582,7 @@ export function GridVisualization() {
                 onPaneClick={() => setSelected(null)}
                 onSelectionChange={onSelectionChange}
               >
-                <Background color="#d4d4d4" gap={18} />
+                <Background color="#1e293b" gap={18} />
                 <MiniMap
                   nodeColor={(node) => {
                     if (isGridNode(node)) {
@@ -590,22 +611,8 @@ export function GridVisualization() {
                 }
               : null
           }
-          activeAction={activeAction}
           mitigation={mitigation}
-          onFindMitigation={handleFindMitigation}
-          onOperatingProfileChange={(profile) => {
-            setOperatingProfile(profile);
-            setPrediction(null);
-            setMitigation(null);
-            setRecommendationCascades(new Map());
-            setSelectedPresetId(null);
-          }}
-          onPredictRisk={handlePredictRisk}
-          onRunCascade={handleRunCascade}
-          onResetScenario={handleResetScenario}
           onSimulateRecommendation={handleSimulateRecommendation}
-          onSimulateFailure={handleSimulateFailure}
-          operatingProfile={operatingProfile}
           prediction={prediction}
           selected={selected}
         />
@@ -732,11 +739,132 @@ function toRecommendationCascadeMap(recommendations: ApiMitigationRecommendation
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
+  const tone =
+    label.toLowerCase().includes("lost") ||
+    label.toLowerCase().includes("failed") ||
+    value === "Impacted"
+      ? "danger"
+      : label.toLowerCase().includes("loading") || value === "Stable"
+        ? "warning"
+        : "default";
+
+  return <MetricCard label={label} tone={tone} value={value} />;
+}
+
+function ControlRail({
+  activeAction,
+  onFindMitigation,
+  onLoadPreset,
+  onOperatingProfileChange,
+  onPredictRisk,
+  onRunCascade,
+  onResetScenario,
+  onSimulateFailure,
+  operatingProfile,
+  presets,
+  selected,
+  selectedPresetId,
+}: {
+  activeAction: ActiveAction;
+  onFindMitigation: () => void;
+  onLoadPreset: (preset: ApiDemoPreset) => void;
+  onOperatingProfileChange: (profile: OperatingProfileKey) => void;
+  onPredictRisk: () => void;
+  onRunCascade: () => void;
+  onResetScenario: () => void;
+  onSimulateFailure: () => void;
+  operatingProfile: OperatingProfileKey;
+  presets: ApiDemoPreset[];
+  selected: SelectedGridElement;
+  selectedPresetId: string | null;
+}) {
+  const busy = activeAction !== null;
+  const hasSelection = selected !== null;
+
   return (
-    <div className="rounded border border-neutral-200 bg-neutral-50 px-4 py-3">
-      <div className="text-xs font-medium text-neutral-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-neutral-950">{value}</div>
-    </div>
+    <aside className="grid content-start gap-4 bg-slate-950 p-4">
+      <SectionPanel eyebrow="Scenario" title="Demo Controls">
+        <DemoScenarioBar
+          activeAction={activeAction}
+          onLoadPreset={onLoadPreset}
+          presets={presets}
+          selectedPresetId={selectedPresetId}
+        />
+        <label className="mt-4 grid gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Operating Profile
+          <select
+            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold normal-case tracking-normal text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
+            onChange={(event) => onOperatingProfileChange(event.target.value as OperatingProfileKey)}
+            value={operatingProfile}
+          >
+            <option value="baseline">Baseline</option>
+            <option value="stressed">Stressed</option>
+            <option value="critical">Critical Demo</option>
+            <option value="severe">Severe</option>
+          </select>
+        </label>
+      </SectionPanel>
+
+      <SectionPanel eyebrow="Analysis" title="Actions">
+        <div className="grid gap-2">
+          <ActionButton
+            disabled={!hasSelection || busy}
+            onClick={onPredictRisk}
+            title="Estimate cascade risk using the saved ML model"
+            variant="primary"
+          >
+            {activeAction === "predict" ? "Predicting Risk..." : "Predict Risk"}
+          </ActionButton>
+          <ActionButton
+            disabled={!hasSelection || busy}
+            onClick={onRunCascade}
+            title="Run the deterministic cascade simulation"
+            variant="danger"
+          >
+            {activeAction === "cascade" ? "Running Cascade..." : "Run Cascade"}
+          </ActionButton>
+          <div className="grid grid-cols-2 gap-2">
+            <ActionButton
+              disabled={!hasSelection || busy}
+              onClick={onSimulateFailure}
+              title="Apply only the selected initial outage"
+              variant="secondary"
+            >
+              {activeAction === "failure" ? "Simulating..." : "Failure"}
+            </ActionButton>
+            <ActionButton
+              disabled={!hasSelection || busy}
+              onClick={onFindMitigation}
+              title="Evaluate mitigation candidates"
+              variant="secondary"
+            >
+              {activeAction === "mitigation" ? "Finding..." : "Mitigate"}
+            </ActionButton>
+          </div>
+          <ActionButton
+            disabled={busy}
+            onClick={onResetScenario}
+            title="Return to the healthy baseline"
+            variant="ghost"
+          >
+            {activeAction === "reset" ? "Resetting..." : "Reset Scenario"}
+          </ActionButton>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          Select a grid element or load a preset before running analysis.
+        </p>
+      </SectionPanel>
+
+      <SectionPanel eyebrow="Legend" title="Component Status">
+        <div className="grid gap-2 text-sm text-slate-300">
+          <StatusLegend label="Healthy" color="bg-emerald-400" />
+          <StatusLegend label="Stressed" color="bg-amber-300" />
+          <StatusLegend label="Overloaded" color="bg-red-400" />
+          <StatusLegend label="Failed" color="bg-slate-500" />
+          <StatusLegend label="Unsupplied" color="bg-slate-300" />
+        </div>
+      </SectionPanel>
+    </aside>
   );
 }
 
@@ -756,21 +884,20 @@ function DemoScenarioBar({
   }
 
   return (
-    <div className="mb-4 rounded border border-neutral-200 bg-neutral-50 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <div className="grid gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-950">Demo Scenarios</h2>
-          <p className="mt-1 text-xs leading-5 text-neutral-600">
-            Load a deterministic simulator-backed scenario for the presentation path.
+          <p className="text-xs leading-5 text-slate-500">
+            Load a deterministic simulator-backed case for the presentation path.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2">
           {presets.map((preset) => (
             <button
-              className={`rounded border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+              className={`rounded-md border px-3 py-2 text-left text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:cursor-not-allowed disabled:opacity-60 ${
                 preset.id === selectedPresetId
-                  ? "border-red-700 bg-red-700 text-white"
-                  : "border-neutral-300 bg-white text-neutral-800 hover:border-red-700"
+                  ? "border-cyan-400 bg-cyan-400 text-slate-950"
+                  : "border-slate-700 bg-slate-900 text-slate-200 hover:border-cyan-400"
               }`}
               disabled={activeAction !== null}
               key={preset.id}
@@ -784,16 +911,10 @@ function DemoScenarioBar({
         </div>
       </div>
       {selectedPresetId ? (
-        <p className="mt-3 text-xs leading-5 text-neutral-600">
+        <p className="mt-3 text-xs leading-5 text-slate-500">
           {presets.find((preset) => preset.id === selectedPresetId)?.summary}
         </p>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-3 border-t border-neutral-200 pt-3 text-xs text-neutral-600">
-        <StatusLegend label="Healthy" color="bg-emerald-500" />
-        <StatusLegend label="Stressed" color="bg-amber-400" />
-        <StatusLegend label="Overloaded" color="bg-orange-500" />
-        <StatusLegend label="Failed" color="bg-red-700" />
-      </div>
     </div>
   );
 }
