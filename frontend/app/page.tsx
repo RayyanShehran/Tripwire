@@ -1,9 +1,13 @@
 import { GridVisualization } from "../components/grid/grid-visualization";
 
 const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 
 async function getBackendHealth(): Promise<string> {
+  if (!apiBaseUrl) {
+    return "not configured";
+  }
+
   try {
     const response = await fetch(`${apiBaseUrl}/health`, {
       cache: "no-store",
