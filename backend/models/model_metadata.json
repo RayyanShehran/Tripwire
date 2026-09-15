@@ -1,9 +1,9 @@
 {
   "model_version": "tripwire-ml-v1",
-  "training_timestamp": "2026-09-15T12:43:31.880900+00:00",
+  "training_timestamp": "2026-09-15T12:58:24.179840+00:00",
   "dataset_path": "C:\\Projects\\Tripwire\\Tripwire\\backend\\data\\generated\\tripwire_scenarios.csv",
   "dataset_row_count": 3000,
-  "git_commit": "ce61b21",
+  "git_commit": "6bb640b",
   "feature_columns": [
     "component_type",
     "component_id",
