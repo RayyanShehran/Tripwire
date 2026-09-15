@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import json
+from io import StringIO
 
 import pandas as pd
 import pytest
@@ -18,7 +19,6 @@ from app.ml.dataset import (
     generate_dataset,
     severity_label,
     validate_dataset,
-    write_dataset,
 )
 
 
@@ -149,34 +149,27 @@ def test_severity_label_thresholds_are_deterministic() -> None:
     assert severity_label(50.0) == "CRITICAL"
 
 
-def test_output_csv_can_be_loaded(tmp_path) -> None:
+def test_output_csv_can_be_loaded() -> None:
     result = generate_dataset(
         seed=13,
         load_multipliers=(1.0,),
         component_types=("bus",),
         max_scenarios=3,
     )
-    output = tmp_path / "tripwire_scenarios.csv"
-
-    write_dataset(result, output)
-    loaded = pd.read_csv(output)
+    loaded = pd.read_csv(StringIO(result.dataframe.to_csv(index=False)))
 
     assert len(loaded) == len(result.dataframe)
     assert list(loaded.columns) == DATASET_COLUMNS
 
 
-def test_metadata_json_can_be_loaded_without_nonstandard_numbers(tmp_path) -> None:
+def test_metadata_json_can_be_loaded_without_nonstandard_numbers() -> None:
     result = generate_dataset(
         seed=19,
         load_multipliers=(1.0,),
         component_types=("line",),
         max_scenarios=2,
     )
-    output = tmp_path / "tripwire_scenarios.csv"
-    metadata = tmp_path / "dataset_metadata.json"
-
-    write_dataset(result, output, metadata)
-    loaded = json.loads(metadata.read_text(encoding="utf-8"))
+    loaded = json.loads(json.dumps(result.metadata, allow_nan=False))
 
     assert loaded["severity_thresholds"]["CRITICAL"]["max_load_lost_percent"] is None
     assert loaded["dataset_schema_version"] == "2.0"

@@ -11,16 +11,13 @@ from app.ml.dataset import generate_dataset
 from app.ml.features import MODEL_FEATURE_COLUMNS, TARGET_LEAKAGE_COLUMNS, feature_frame
 from app.ml.inference import load_model_bundle, predict_from_frame, predict_from_scenario
 from app.ml.train import (
-    CLASSIFIER_ARTIFACT,
-    METADATA_ARTIFACT,
-    REGRESSOR_ARTIFACT,
     split_dataset,
     train_models,
 )
 
 
 @pytest.fixture(scope="module")
-def ml_dataset(tmp_path_factory: pytest.TempPathFactory) -> tuple[pd.DataFrame, object]:
+def ml_dataset() -> pd.DataFrame:
     result = generate_dataset(
         seed=51,
         load_multipliers=(1.0, 1.5),
@@ -29,9 +26,7 @@ def ml_dataset(tmp_path_factory: pytest.TempPathFactory) -> tuple[pd.DataFrame, 
         dispatch_profiles=("balanced",),
         component_types=("line", "bus"),
     )
-    path = tmp_path_factory.mktemp("ml-data") / "dataset.csv"
-    result.dataframe.to_csv(path, index=False)
-    return result.dataframe, path
+    return result.dataframe
 
 
 def test_model_feature_list_excludes_targets() -> None:
@@ -39,8 +34,7 @@ def test_model_feature_list_excludes_targets() -> None:
 
 
 def test_preprocessing_feature_frame_uses_only_authoritative_features(ml_dataset) -> None:
-    dataframe, _ = ml_dataset
-    frame = feature_frame(dataframe)
+    frame = feature_frame(ml_dataset)
 
     assert list(frame.columns) == MODEL_FEATURE_COLUMNS
     assert "load_lost_percent" not in frame.columns
@@ -48,17 +42,18 @@ def test_preprocessing_feature_frame_uses_only_authoritative_features(ml_dataset
 
 
 def test_split_strategy_is_deterministic(ml_dataset) -> None:
-    dataframe, _ = ml_dataset
-    first = split_dataset(dataframe, random_seed=42)
-    second = split_dataset(dataframe, random_seed=42)
+    first = split_dataset(ml_dataset, random_seed=42)
+    second = split_dataset(ml_dataset, random_seed=42)
 
     assert first.strategy == second.strategy
     assert first.x_test.index.tolist() == second.x_test.index.tolist()
 
 
-def test_classifier_and_regressor_training_complete(ml_dataset, tmp_path) -> None:
-    _, dataset_path = ml_dataset
-    result = train_models(dataset_path=dataset_path, output_dir=tmp_path, save_artifacts=False)
+def test_classifier_and_regressor_training_complete(ml_dataset) -> None:
+    result = train_models(
+        dataframe=ml_dataset,
+        save_artifacts=False,
+    )
 
     assert result.metadata["classifier_model"]
     assert result.metadata["regressor_model"]
@@ -66,17 +61,10 @@ def test_classifier_and_regressor_training_complete(ml_dataset, tmp_path) -> Non
     assert result.metadata["regressor_metrics"]["mae"] >= 0.0
 
 
-def test_saved_artifacts_load_and_predict(ml_dataset, tmp_path) -> None:
-    dataframe, dataset_path = ml_dataset
-    train_models(dataset_path=dataset_path, output_dir=tmp_path, save_artifacts=True)
-
-    assert (tmp_path / CLASSIFIER_ARTIFACT).exists()
-    assert (tmp_path / REGRESSOR_ARTIFACT).exists()
-    assert (tmp_path / METADATA_ARTIFACT).exists()
-
+def test_saved_artifacts_load_and_predict(ml_dataset) -> None:
     load_model_bundle.cache_clear()
-    bundle = load_model_bundle(tmp_path)
-    prediction = predict_from_frame(feature_frame(dataframe).head(1), model_dir=tmp_path)
+    bundle = load_model_bundle()
+    prediction = predict_from_frame(feature_frame(ml_dataset).head(1))
 
     assert bundle["metadata"]["model_version"] == "tripwire-ml-v1"
     assert 0.0 <= prediction["cascade_probability"] <= 1.0

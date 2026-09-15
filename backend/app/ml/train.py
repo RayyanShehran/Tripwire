@@ -70,12 +70,16 @@ class TrainingResult:
 
 def train_models(
     dataset_path: Path | None = None,
+    dataframe: pd.DataFrame | None = None,
     output_dir: Path = MODEL_DIR,
     random_seed: int = RANDOM_SEED,
     save_artifacts: bool = True,
 ) -> TrainingResult:
     dataset_path = dataset_path or default_output_path()
-    dataframe = pd.read_csv(dataset_path)
+    if dataframe is None:
+        dataframe = pd.read_csv(dataset_path)
+    else:
+        dataframe = dataframe.copy()
     validate_dataset(dataframe)
 
     split = split_dataset(dataframe, random_seed=random_seed)
