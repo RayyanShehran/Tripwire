@@ -44,6 +44,7 @@ class MitigationImprovement(TypedDict):
 class RecommendationResponse(TypedDict):
     baseline: MitigationOutcome
     recommendations: list[dict[str, Any]]
+    summary: str
     candidate_count: int
     feasible_candidate_count: int
     evaluated_candidate_count: int
@@ -107,12 +108,16 @@ def recommend_mitigations(
         reverse=True,
     )
 
+    beneficial = [item for item in evaluated if item["score"] > 0]
+    selected = beneficial[:top_n]
+
     return {
         "baseline": baseline,
         "recommendations": [
             {**item, "rank": index + 1}
-            for index, item in enumerate(evaluated[:top_n])
+            for index, item in enumerate(selected)
         ],
+        "summary": _summary(selected),
         "candidate_count": len(candidates),
         "feasible_candidate_count": len(candidates),
         "evaluated_candidate_count": len(evaluated),
@@ -162,6 +167,12 @@ def scoring_weights() -> dict[str, float]:
         "cascade_depth_reduction": CASCADE_DEPTH_REDUCTION_WEIGHT,
         "intervention_cost_penalty": INTERVENTION_COST_WEIGHT,
     }
+
+
+def _summary(recommendations: list[dict[str, Any]]) -> str:
+    if recommendations:
+        return "Recommended based on Tripwire simulation."
+    return "No beneficial mitigation found within the bounded candidate set."
 
 
 def _generator_redispatch_candidates(config: ScenarioConfig) -> list[MitigationAction]:

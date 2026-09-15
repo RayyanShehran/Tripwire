@@ -10,6 +10,7 @@ from app.simulation.grid import (
     GridComponentType,
     GridConvergenceError,
 )
+from app.simulation.mitigation import recommend_mitigations
 from app.simulation.scenario import ComponentFailure, get_baseline_grid
 from app.simulation.scenario import simulate_failure as simulate_single_failure
 
@@ -50,6 +51,12 @@ class CascadeRequest(FailureRequest):
 
 class PredictionRequest(FailureRequest):
     operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
+
+
+class RecommendationRequest(FailureRequest):
+    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
+    max_candidates: int = Field(default=24, ge=1, le=30)
+    top_n: int = Field(default=3, ge=1, le=5)
 
 
 @app.get("/health")
@@ -131,4 +138,20 @@ def predict_risk(request: PredictionRequest) -> dict:
     except ModelNotTrainedError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (PredictionInputError, KeyError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/recommend")
+def recommend_actions(request: RecommendationRequest) -> dict:
+    try:
+        return recommend_mitigations(
+            component_type=request.component_type,
+            component_id=request.component_id,
+            operating_condition=request.operating_condition.model_dump(),
+            max_candidates=request.max_candidates,
+            top_n=request.top_n,
+        )
+    except GridComponentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
