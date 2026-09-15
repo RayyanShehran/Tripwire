@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.ml.inference import ModelNotTrainedError, PredictionInputError, predict_from_scenario
 from app.simulation.cascade import DEFAULT_MAX_CASCADE_STEPS, simulate_cascade
 from app.simulation.grid import (
     GridComponentNotFoundError,
@@ -36,6 +37,17 @@ class FailureRequest(BaseModel):
 
 class CascadeRequest(FailureRequest):
     max_steps: int = Field(default=DEFAULT_MAX_CASCADE_STEPS, ge=0, le=100)
+
+
+class OperatingCondition(BaseModel):
+    load_multiplier: float = Field(default=1.0, gt=0)
+    generation_multiplier: float = Field(default=1.0, gt=0)
+    line_rating_multiplier: float = Field(default=1.0, gt=0)
+    dispatch_profile: str = Field(default="balanced", min_length=1)
+
+
+class PredictionRequest(FailureRequest):
+    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
 
 
 @app.get("/health")
@@ -87,4 +99,24 @@ def run_cascade(request: CascadeRequest) -> dict:
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/predict")
+def predict_risk(request: PredictionRequest) -> dict:
+    condition = request.operating_condition
+    try:
+        return predict_from_scenario(
+            component_type=request.component_type,
+            component_id=request.component_id,
+            load_multiplier=condition.load_multiplier,
+            generation_multiplier=condition.generation_multiplier,
+            line_rating_multiplier=condition.line_rating_multiplier,
+            dispatch_profile=condition.dispatch_profile,
+        )
+    except GridComponentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ModelNotTrainedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (PredictionInputError, KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
