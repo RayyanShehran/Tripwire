@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.ml.dataset import ScenarioCandidate, ScenarioConfig, create_operating_grid
 from app.ml.inference import ModelNotTrainedError, PredictionInputError, predict_from_scenario
 from app.simulation.cascade import DEFAULT_MAX_CASCADE_STEPS, simulate_cascade
 from app.simulation.grid import (
@@ -35,15 +36,16 @@ class FailureRequest(BaseModel):
     component_id: str = Field(..., min_length=1)
 
 
-class CascadeRequest(FailureRequest):
-    max_steps: int = Field(default=DEFAULT_MAX_CASCADE_STEPS, ge=0, le=100)
-
-
 class OperatingCondition(BaseModel):
     load_multiplier: float = Field(default=1.0, gt=0)
     generation_multiplier: float = Field(default=1.0, gt=0)
     line_rating_multiplier: float = Field(default=1.0, gt=0)
     dispatch_profile: str = Field(default="balanced", min_length=1)
+
+
+class CascadeRequest(FailureRequest):
+    max_steps: int = Field(default=DEFAULT_MAX_CASCADE_STEPS, ge=0, le=100)
+    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
 
 
 class PredictionRequest(FailureRequest):
@@ -90,11 +92,21 @@ def reset_grid() -> dict:
 
 @app.post("/api/cascade")
 def run_cascade(request: CascadeRequest) -> dict:
+    condition = request.operating_condition
+    config = ScenarioConfig(
+        load_multiplier=condition.load_multiplier,
+        generation_multiplier=condition.generation_multiplier,
+        line_rating_multiplier=condition.line_rating_multiplier,
+        dispatch_profile=condition.dispatch_profile,
+        initial_failure=ScenarioCandidate(request.component_type, request.component_id),
+        seed=42,
+    )
     try:
         return simulate_cascade(
             component_type=request.component_type,
             component_id=request.component_id,
             max_steps=request.max_steps,
+            net_factory=lambda: create_operating_grid(config),
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

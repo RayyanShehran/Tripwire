@@ -305,6 +305,7 @@ export function GridVisualization() {
         apiBaseUrl,
         componentType as ApiComponentType,
         componentId,
+        operatingConditions[operatingProfile],
       );
 
       setCascadeResult(response);
@@ -326,7 +327,7 @@ export function GridVisualization() {
     } finally {
       setIsMutating(false);
     }
-  }, [apiBaseUrl, selected]);
+  }, [apiBaseUrl, operatingProfile, selected]);
 
   const handlePredictRisk = useCallback(async () => {
     if (!selected) {

@@ -176,11 +176,13 @@ export async function runCascade(
   apiBaseUrl: string,
   componentType: ApiComponentType,
   componentId: string,
+  operatingCondition: ApiOperatingCondition,
 ): Promise<ApiCascadeResponse> {
   const response = await fetch(`${apiBaseUrl}/api/cascade`, {
     body: JSON.stringify({
       component_type: componentType,
       component_id: componentId,
+      operating_condition: operatingCondition,
     }),
     cache: "no-store",
     headers: {
