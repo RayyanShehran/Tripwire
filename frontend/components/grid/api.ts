@@ -115,6 +115,43 @@ export type ApiPredictionResponse = {
   model_version: string;
 };
 
+export type ApiMitigationOutcome = {
+  load_lost_percent: number;
+  cascade_depth: number;
+  failed_lines: number;
+  failed_components: number;
+  unserved_load_mw: number;
+  termination_reason: string;
+};
+
+export type ApiMitigationRecommendation = {
+  rank: number;
+  action_type: "generator_redispatch" | "load_shedding";
+  description: string;
+  parameters: Record<string, string | number>;
+  predicted_or_simulated_outcome: ApiMitigationOutcome;
+  improvement: {
+    load_loss_reduction_percent_points: number;
+    failed_lines_reduced: number;
+    failed_components_reduced: number;
+    cascade_depth_reduced: number;
+    unserved_load_reduction_mw: number;
+  };
+  score: number;
+  cascade_result: ApiCascadeResponse;
+};
+
+export type ApiMitigationResponse = {
+  baseline: ApiMitigationOutcome;
+  recommendations: ApiMitigationRecommendation[];
+  summary: string;
+  candidate_count: number;
+  feasible_candidate_count: number;
+  evaluated_candidate_count: number;
+  execution_time_ms: number;
+  scoring_weights: Record<string, number>;
+};
+
 const displayStatuses: Record<ApiStatus, GridStatus> = {
   healthy: "Healthy",
   stressed: "Stressed",
@@ -222,6 +259,33 @@ export async function predictRisk(
   }
 
   return (await response.json()) as ApiPredictionResponse;
+}
+
+export async function findMitigations(
+  apiBaseUrl: string,
+  componentType: ApiComponentType,
+  componentId: string,
+  operatingCondition: ApiOperatingCondition,
+): Promise<ApiMitigationResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/recommend`, {
+    body: JSON.stringify({
+      component_type: componentType,
+      component_id: componentId,
+      operating_condition: operatingCondition,
+      top_n: 3,
+    }),
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Recommendation API returned ${response.status}`);
+  }
+
+  return (await response.json()) as ApiMitigationResponse;
 }
 
 export function toDisplayStatus(status: ApiStatus): GridStatus {

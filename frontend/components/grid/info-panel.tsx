@@ -15,10 +15,14 @@ type InfoPanelProps = {
   cascadeSummary: CascadeSummary | null;
   isMutating: boolean;
   isPredicting: boolean;
+  isFindingMitigation: boolean;
+  mitigation: MitigationResult | null;
+  onFindMitigation: () => void;
   onOperatingProfileChange: (profile: OperatingProfileKey) => void;
   onPredictRisk: () => void;
   onRunCascade: () => void;
   onResetScenario: () => void;
+  onSimulateRecommendation: (recommendation: MitigationRecommendation) => void;
   onSimulateFailure: () => void;
   operatingProfile: OperatingProfileKey;
   prediction: RiskPrediction | null;
@@ -43,14 +47,50 @@ export type RiskPrediction = {
   actualLoadLostPercent?: number;
 };
 
+export type MitigationOutcome = {
+  loadLostPercent: number;
+  cascadeDepth: number;
+  failedLines: number;
+  failedComponents: number;
+  unservedLoadMw: number;
+  terminationReason: string;
+};
+
+export type MitigationRecommendation = {
+  rank: number;
+  actionType: string;
+  description: string;
+  outcome: MitigationOutcome;
+  improvement: {
+    loadLossReductionPercentPoints: number;
+    failedLinesReduced: number;
+    failedComponentsReduced: number;
+    cascadeDepthReduced: number;
+    unservedLoadReductionMw: number;
+  };
+  score: number;
+};
+
+export type MitigationResult = {
+  baseline: MitigationOutcome;
+  recommendations: MitigationRecommendation[];
+  summary: string;
+  candidateCount: number;
+  executionTimeMs: number;
+};
+
 export function InfoPanel({
   cascadeSummary,
   isMutating,
   isPredicting,
+  isFindingMitigation,
+  mitigation,
+  onFindMitigation,
   onOperatingProfileChange,
   onPredictRisk,
   onRunCascade,
   onResetScenario,
+  onSimulateRecommendation,
   onSimulateFailure,
   operatingProfile,
   prediction,
@@ -68,8 +108,11 @@ export function InfoPanel({
           canSimulate={false}
           canRunCascade={false}
           canPredict={false}
+          canFindMitigation={false}
           isMutating={isMutating}
           isPredicting={isPredicting}
+          isFindingMitigation={isFindingMitigation}
+          onFindMitigation={onFindMitigation}
           onOperatingProfileChange={onOperatingProfileChange}
           onPredictRisk={onPredictRisk}
           onRunCascade={onRunCascade}
@@ -78,6 +121,10 @@ export function InfoPanel({
           operatingProfile={operatingProfile}
         />
         <PredictionPanel prediction={prediction} />
+        <MitigationPanel
+          mitigation={mitigation}
+          onSimulateRecommendation={onSimulateRecommendation}
+        />
         <CascadeSummaryPanel summary={cascadeSummary} />
       </aside>
     );
@@ -109,8 +156,11 @@ export function InfoPanel({
           canSimulate
           canRunCascade
           canPredict
+          canFindMitigation
           isMutating={isMutating}
           isPredicting={isPredicting}
+          isFindingMitigation={isFindingMitigation}
+          onFindMitigation={onFindMitigation}
           onOperatingProfileChange={onOperatingProfileChange}
           onPredictRisk={onPredictRisk}
           onRunCascade={onRunCascade}
@@ -119,6 +169,10 @@ export function InfoPanel({
           operatingProfile={operatingProfile}
         />
         <PredictionPanel prediction={prediction} />
+        <MitigationPanel
+          mitigation={mitigation}
+          onSimulateRecommendation={onSimulateRecommendation}
+        />
         <CascadeSummaryPanel summary={cascadeSummary} />
       </aside>
     );
@@ -148,8 +202,11 @@ export function InfoPanel({
         canSimulate
         canRunCascade
         canPredict
+        canFindMitigation
         isMutating={isMutating}
         isPredicting={isPredicting}
+        isFindingMitigation={isFindingMitigation}
+        onFindMitigation={onFindMitigation}
         onOperatingProfileChange={onOperatingProfileChange}
         onPredictRisk={onPredictRisk}
         onRunCascade={onRunCascade}
@@ -158,6 +215,10 @@ export function InfoPanel({
         operatingProfile={operatingProfile}
       />
       <PredictionPanel prediction={prediction} />
+      <MitigationPanel
+        mitigation={mitigation}
+        onSimulateRecommendation={onSimulateRecommendation}
+      />
       <CascadeSummaryPanel summary={cascadeSummary} />
     </aside>
   );
@@ -171,8 +232,11 @@ function PanelActions({
   canRunCascade,
   canSimulate,
   canPredict,
+  canFindMitigation,
   isMutating,
   isPredicting,
+  isFindingMitigation,
+  onFindMitigation,
   onOperatingProfileChange,
   onPredictRisk,
   onRunCascade,
@@ -183,8 +247,11 @@ function PanelActions({
   canRunCascade: boolean;
   canSimulate: boolean;
   canPredict: boolean;
+  canFindMitigation: boolean;
   isMutating: boolean;
   isPredicting: boolean;
+  isFindingMitigation: boolean;
+  onFindMitigation: () => void;
   onOperatingProfileChange: (profile: OperatingProfileKey) => void;
   onPredictRisk: () => void;
   onRunCascade: () => void;
@@ -215,6 +282,14 @@ function PanelActions({
         {isPredicting ? "Predicting..." : "Predict Risk"}
       </button>
       <button
+        className="rounded border border-neutral-950 bg-white px-3 py-2 text-sm font-semibold text-neutral-950 disabled:cursor-not-allowed disabled:border-neutral-300 disabled:text-neutral-400"
+        disabled={!canFindMitigation || isMutating || isFindingMitigation}
+        onClick={onFindMitigation}
+        type="button"
+      >
+        {isFindingMitigation ? "Finding..." : "Find Mitigation"}
+      </button>
+      <button
         className="rounded bg-red-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
         disabled={!canSimulate || isMutating}
         onClick={onSimulateFailure}
@@ -238,6 +313,84 @@ function PanelActions({
       >
         Return to Baseline
       </button>
+    </div>
+  );
+}
+
+function MitigationPanel({
+  mitigation,
+  onSimulateRecommendation,
+}: {
+  mitigation: MitigationResult | null;
+  onSimulateRecommendation: (recommendation: MitigationRecommendation) => void;
+}) {
+  if (!mitigation) {
+    return null;
+  }
+
+  return (
+    <div className="mt-6 rounded border border-neutral-200 bg-neutral-50 p-4">
+      <h3 className="text-sm font-semibold text-neutral-950">
+        Recommended Based on Tripwire Simulation
+      </h3>
+      <p className="mt-2 text-xs leading-5 text-neutral-600">
+        {mitigation.summary}
+      </p>
+      <dl className="mt-3">
+        <Row label="Baseline load lost" value={`${mitigation.baseline.loadLostPercent.toFixed(1)}%`} />
+        <Row label="Baseline failed lines" value={mitigation.baseline.failedLines.toString()} />
+        <Row label="Candidates tested" value={mitigation.candidateCount.toString()} />
+        <Row label="Runtime" value={`${mitigation.executionTimeMs.toFixed(0)} ms`} />
+      </dl>
+      <div className="mt-4 grid gap-3">
+        {mitigation.recommendations.length === 0 ? (
+          <p className="text-sm text-neutral-600">
+            No bounded candidate reduced the simulated severity.
+          </p>
+        ) : (
+          mitigation.recommendations.map((recommendation) => (
+            <div
+              className="rounded border border-neutral-200 bg-white p-3"
+              key={`${recommendation.rank}-${recommendation.description}`}
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide text-red-700">
+                Action #{recommendation.rank}
+              </div>
+              <div className="mt-1 text-sm font-semibold text-neutral-950">
+                {formatActionType(recommendation.actionType)}
+              </div>
+              <p className="mt-1 text-sm leading-5 text-neutral-600">
+                {recommendation.description}
+              </p>
+              <dl className="mt-2">
+                <Row
+                  label="Load lost"
+                  value={`${mitigation.baseline.loadLostPercent.toFixed(1)}% -> ${recommendation.outcome.loadLostPercent.toFixed(1)}%`}
+                />
+                <Row
+                  label="Cascade depth"
+                  value={`${mitigation.baseline.cascadeDepth} -> ${recommendation.outcome.cascadeDepth}`}
+                />
+                <Row
+                  label="Failed lines"
+                  value={`${mitigation.baseline.failedLines} -> ${recommendation.outcome.failedLines}`}
+                />
+                <Row
+                  label="Improvement"
+                  value={`${recommendation.improvement.loadLossReductionPercentPoints.toFixed(1)} pts`}
+                />
+              </dl>
+              <button
+                className="mt-3 w-full rounded bg-neutral-950 px-3 py-2 text-sm font-semibold text-white"
+                onClick={() => onSimulateRecommendation(recommendation)}
+                type="button"
+              >
+                Simulate Recommendation
+              </button>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -302,4 +455,8 @@ function CascadeSummaryPanel({ summary }: { summary: CascadeSummary | null }) {
 
 function formatReason(reason: string) {
   return reason.replaceAll("_", " ");
+}
+
+function formatActionType(actionType: string) {
+  return actionType.replaceAll("_", " ");
 }

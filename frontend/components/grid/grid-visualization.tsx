@@ -19,6 +19,7 @@ import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel } from "./info-panel";
 import {
   fetchGrid,
+  findMitigations,
   predictRisk,
   resetScenario,
   runCascade,
@@ -29,6 +30,8 @@ import {
   type ApiCascadeStep,
   type ApiComponentType,
   type ApiGridResponse,
+  type ApiMitigationRecommendation,
+  type ApiMitigationResponse,
   type ApiOperatingCondition,
   type ApiPredictionResponse,
 } from "./api";
@@ -36,7 +39,12 @@ import { statusStyles } from "./status";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
 import type { GridLine, GridNode, SelectedGridElement } from "./types";
-import type { OperatingProfileKey, RiskPrediction } from "./info-panel";
+import type {
+  MitigationRecommendation,
+  MitigationResult,
+  OperatingProfileKey,
+  RiskPrediction,
+} from "./info-panel";
 
 const nodeTypes = {
   generator: GeneratorNode,
@@ -67,6 +75,7 @@ export function GridVisualization() {
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [isPredicting, setIsPredicting] = useState(false);
+  const [isFindingMitigation, setIsFindingMitigation] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const flowData = useMemo(() => (grid ? toFlowData(grid) : { nodes: [], edges: [] }), [grid]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
@@ -74,6 +83,10 @@ export function GridVisualization() {
   const [selected, setSelected] = useState<SelectedGridElement>(null);
   const [operatingProfile, setOperatingProfile] = useState<OperatingProfileKey>("baseline");
   const [prediction, setPrediction] = useState<RiskPrediction | null>(null);
+  const [mitigation, setMitigation] = useState<MitigationResult | null>(null);
+  const [recommendationCascades, setRecommendationCascades] = useState(
+    new Map<number, ApiCascadeResponse>(),
+  );
   const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
 
   const metrics = useMemo(() => {
@@ -226,17 +239,20 @@ export function GridVisualization() {
       if (firstNode && isGridNode(firstNode)) {
         setSelected({ kind: "node", item: firstNode });
         setPrediction(null);
+        setMitigation(null);
         return;
       }
 
       if (firstEdge && isGridLine(firstEdge)) {
         setSelected({ kind: "line", item: firstEdge });
         setPrediction(null);
+        setMitigation(null);
         return;
       }
 
       setSelected(null);
       setPrediction(null);
+      setMitigation(null);
     },
     [],
   );
@@ -259,6 +275,8 @@ export function GridVisualization() {
       );
       setCascadeResult(null);
       setPrediction(null);
+      setMitigation(null);
+      setRecommendationCascades(new Map());
       setCurrentStepIndex(0);
       setIsPlaying(false);
       applyGridResponse(response);
@@ -278,6 +296,8 @@ export function GridVisualization() {
       const response = await resetScenario(apiBaseUrl);
       setCascadeResult(null);
       setPrediction(null);
+      setMitigation(null);
+      setRecommendationCascades(new Map());
       setCurrentStepIndex(0);
       setIsPlaying(false);
       applyGridResponse(response);
@@ -328,6 +348,47 @@ export function GridVisualization() {
       setIsMutating(false);
     }
   }, [apiBaseUrl, operatingProfile, selected]);
+
+  const handleFindMitigation = useCallback(async () => {
+    if (!selected) {
+      return;
+    }
+
+    const componentType = selected.kind === "line" ? "line" : selected.item.type;
+    const componentId = selected.item.id;
+
+    try {
+      setIsFindingMitigation(true);
+      setErrorMessage(null);
+      const response = await findMitigations(
+        apiBaseUrl,
+        componentType as ApiComponentType,
+        componentId,
+        operatingConditions[operatingProfile],
+      );
+      setMitigation(toMitigationResult(response));
+      setRecommendationCascades(toRecommendationCascadeMap(response.recommendations));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to find mitigations",
+      );
+    } finally {
+      setIsFindingMitigation(false);
+    }
+  }, [apiBaseUrl, operatingProfile, selected]);
+
+  const handleSimulateRecommendation = useCallback(
+    (recommendation: MitigationRecommendation) => {
+      const recommendedCascade = recommendationCascades.get(recommendation.rank);
+      if (!recommendedCascade) {
+        return;
+      }
+      setCascadeResult(recommendedCascade);
+      setCurrentStepIndex(0);
+      setIsPlaying(recommendedCascade.steps.length > 1);
+    },
+    [recommendationCascades],
+  );
 
   const handlePredictRisk = useCallback(async () => {
     if (!selected) {
@@ -482,13 +543,19 @@ export function GridVisualization() {
           }
           isMutating={isMutating}
           isPredicting={isPredicting}
+          isFindingMitigation={isFindingMitigation}
+          mitigation={mitigation}
+          onFindMitigation={handleFindMitigation}
           onOperatingProfileChange={(profile) => {
             setOperatingProfile(profile);
             setPrediction(null);
+            setMitigation(null);
+            setRecommendationCascades(new Map());
           }}
           onPredictRisk={handlePredictRisk}
           onRunCascade={handleRunCascade}
           onResetScenario={handleResetScenario}
+          onSimulateRecommendation={handleSimulateRecommendation}
           onSimulateFailure={handleSimulateFailure}
           operatingProfile={operatingProfile}
           prediction={prediction}
@@ -527,6 +594,56 @@ function toRiskPrediction(response: ApiPredictionResponse): RiskPrediction {
     riskLevel: response.risk_level,
     modelVersion: response.model_version,
   };
+}
+
+function toMitigationResult(response: ApiMitigationResponse): MitigationResult {
+  return {
+    baseline: toMitigationOutcome(response.baseline),
+    recommendations: response.recommendations.map(toMitigationRecommendation),
+    summary: response.summary,
+    candidateCount: response.candidate_count,
+    executionTimeMs: response.execution_time_ms,
+  };
+}
+
+function toMitigationRecommendation(
+  recommendation: ApiMitigationRecommendation,
+): MitigationRecommendation {
+  return {
+    rank: recommendation.rank,
+    actionType: recommendation.action_type,
+    description: recommendation.description,
+    outcome: toMitigationOutcome(recommendation.predicted_or_simulated_outcome),
+    improvement: {
+      loadLossReductionPercentPoints:
+        recommendation.improvement.load_loss_reduction_percent_points,
+      failedLinesReduced: recommendation.improvement.failed_lines_reduced,
+      failedComponentsReduced: recommendation.improvement.failed_components_reduced,
+      cascadeDepthReduced: recommendation.improvement.cascade_depth_reduced,
+      unservedLoadReductionMw: recommendation.improvement.unserved_load_reduction_mw,
+    },
+    score: recommendation.score,
+  };
+}
+
+function toMitigationOutcome(outcome: ApiMitigationResponse["baseline"]) {
+  return {
+    loadLostPercent: outcome.load_lost_percent,
+    cascadeDepth: outcome.cascade_depth,
+    failedLines: outcome.failed_lines,
+    failedComponents: outcome.failed_components,
+    unservedLoadMw: outcome.unserved_load_mw,
+    terminationReason: outcome.termination_reason,
+  };
+}
+
+function toRecommendationCascadeMap(recommendations: ApiMitigationRecommendation[]) {
+  return new Map(
+    recommendations.map((recommendation) => [
+      recommendation.rank,
+      recommendation.cascade_result,
+    ]),
+  );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
