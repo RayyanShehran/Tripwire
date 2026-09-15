@@ -21,6 +21,7 @@ from app.simulation.grid import (
     GridConvergenceError,
 )
 from app.simulation.mitigation import recommend_mitigations
+from app.simulation.demo import list_demo_presets
 from app.simulation.scenario import ComponentFailure, get_baseline_grid
 from app.simulation.scenario import simulate_failure as simulate_single_failure
 
@@ -117,6 +118,12 @@ def get_grid() -> dict:
         return get_baseline_grid()
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/demo-presets")
+def get_demo_presets() -> dict:
+    logger.info("demo presets requested")
+    return {"presets": list_demo_presets()}
 
 
 @app.post("/api/failure")
