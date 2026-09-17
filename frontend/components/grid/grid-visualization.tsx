@@ -1,70 +1,24 @@
 "use client";
-
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import {
-  Background,
-  Controls,
-  MiniMap,
-  ReactFlow,
-  ReactFlowProvider,
-  useEdgesState,
-  useNodesState,
-  type Edge,
-  type Node,
-} from "@xyflow/react";
+import Link from "next/link";
+import { Background, Controls, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-
-import { toFlowData } from "./flow-layout";
+import { CircleCheck, CircleX, Network, RotateCcw, LoaderCircle } from "lucide-react";
 import { CascadeTimeline } from "./cascade-timeline";
-import { InfoPanel } from "./info-panel";
-import {
-  fetchGrid,
-  fetchDemoPresets,
-  findMitigations,
-  predictRisk,
-  runCascade,
-  simulateFailure,
-  type ApiCascadeResponse,
-  type ApiComponentType,
-  type ApiDemoPreset,
-  type ApiMitigationRecommendation,
-  type ApiMitigationResponse,
-  type ApiOperatingCondition,
-  type ApiPredictionResponse,
-} from "./api";
+import { InfoPanel, type PanelTab, type ActiveAction, type MitigationRecommendation, type MitigationResult, type OperatingProfileKey, type RiskPrediction } from "./info-panel";
+import { fetchGrid, fetchDemoPresets, findMitigations, predictRisk, runCascade, simulateFailure, type ApiComponentType, type ApiDemoPreset, type ApiMitigationRecommendation, type ApiMitigationResponse, type ApiOperatingCondition, type ApiPredictionResponse } from "./api";
 import { initialScenario, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
-import { statusStyles } from "./status";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
-import type { GridLine, GridNode, SelectedGridElement } from "./types";
+import { toFlowData } from "./flow-layout";
+import { systemState } from "./presentation";
+import { ScenarioControls } from "./scenario-controls";
+import { NetworkTools } from "./network-tools";
+import { StatusBadge } from "../ui/status-badge";
 import { ActionButton } from "../ui/action-button";
-import { MetricCard } from "../ui/metric-card";
-import { SectionPanel } from "../ui/section-panel";
-import type {
-  ActiveAction,
-  MitigationRecommendation,
-  MitigationResult,
-  OperatingProfileKey,
-  RiskPrediction,
-} from "./info-panel";
-
-const nodeTypes = {
-  generator: GeneratorNode,
-  bus: BusNode,
-  load: LoadNode,
-};
-
-const edgeTypes = {
-  transmissionLine: TransmissionLine,
-};
-
-function isGridNode(node: Node): node is GridNode {
-  return node.type === "generator" || node.type === "bus" || node.type === "load";
-}
-
-function isGridLine(edge: Edge): edge is GridLine {
-  return edge.type === "transmissionLine";
-}
+import type { SelectedGridElement } from "./types";
+const nodeTypes = { generator: GeneratorNode, bus: BusNode, load: LoadNode };
+const edgeTypes = { transmissionLine: TransmissionLine };
 
 export function GridVisualization() {
   const apiBaseUrl = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
@@ -77,6 +31,8 @@ export function GridVisualization() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [panelTab, setPanelTab] = useState<PanelTab>("overview");
+  const [apiStatus, setApiStatus] = useState<"checking" | "connected" | "unavailable">("checking");
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
@@ -85,7 +41,10 @@ export function GridVisualization() {
     ?? (scenario.view === "failure" ? scenario.failure?.grid : null)
     ?? scenario.baseline;
   const isLoading = !grid && !errorMessage;
-  const flowData = useMemo(() => grid ? toFlowData(grid, currentCascadeStep ?? undefined) : { nodes: [], edges: [] }, [grid, currentCascadeStep]);
+  const failedIds = useMemo(() => cascadeResult
+    ? cascadeResult.steps.slice(0, currentStepIndex + 1).flatMap((step) => step.newly_failed_components.map((item) => item.component_id))
+    : scenario.view === "failure" && scenario.failure ? [scenario.failure.initial_failure.component_id] : [], [cascadeResult, currentStepIndex, scenario.view, scenario.failure]);
+  const flowData = useMemo(() => grid ? toFlowData(grid, currentCascadeStep ?? undefined, failedIds) : { nodes: [], edges: [] }, [grid, currentCascadeStep, failedIds]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
   const selected = useMemo<SelectedGridElement>(() => {
@@ -108,72 +67,19 @@ export function GridVisualization() {
   const mitigation = scenario.recommendations ? toMitigationResult(scenario.recommendations) : null;
   const selectedMitigation = mitigation?.recommendations.find((item) => item.rank === scenario.selectedMitigationRank) ?? null;
 
-  const dashboardMetrics = useMemo(() => {
-    if (currentCascadeStep) {
-      return [
-        {
-          label: "System Status",
-          value: currentCascadeStep.metrics.load_lost_percent > 0 ? "Impacted" : "Stable",
-        },
-        {
-          label: "Total Demand",
-          value: `${currentCascadeStep.metrics.total_demand_mw.toFixed(1)} MW`,
-        },
-        {
-          label: "Served load",
-          value: `${currentCascadeStep.metrics.served_load_mw.toFixed(1)} MW`,
-        },
-        {
-          label: "Unserved load",
-          value: `${currentCascadeStep.metrics.unserved_load_mw.toFixed(1)} MW`,
-        },
-        {
-          label: "Load lost",
-          value: `${currentCascadeStep.metrics.load_lost_percent.toFixed(1)}%`,
-        },
-        {
-          label: "Failed lines",
-          value: currentCascadeStep.metrics.failed_lines.toString(),
-        },
-        {
-          label: "Failed components",
-          value: currentCascadeStep.metrics.failed_components.toString(),
-        },
-        {
-          label: "Cascade Depth",
-          value: cascadeResult?.cascade_depth.toString() ?? "0",
-        },
-        {
-          label: "Max line loading",
-          value: `${currentCascadeStep.metrics.max_line_loading_percent.toFixed(1)}%`,
-        },
-        ...predictionMetrics(prediction),
-      ];
-    }
-
-    if (grid) {
-      return [
-        {
-          label: "System Status",
-          value:
-            grid.metrics.load_lost_percent > 0 || grid.metrics.failed_components > 0
-              ? "Impacted"
-              : "Healthy",
-        },
-        { label: "Total Demand", value: `${grid.metrics.total_demand_mw.toFixed(1)} MW` },
-        { label: "Served Load", value: `${grid.metrics.served_load_mw.toFixed(1)} MW` },
-        { label: "Unserved Load", value: `${grid.metrics.unserved_load_mw.toFixed(1)} MW` },
-        { label: "Load Lost", value: `${grid.metrics.load_lost_percent.toFixed(1)}%` },
-        { label: "Max Line Loading", value: `${grid.metrics.max_line_loading_percent.toFixed(1)}%` },
-        { label: "Failed Lines", value: grid.metrics.failed_lines.toString() },
-        { label: "Failed Components", value: grid.metrics.failed_components.toString() },
-        ...predictionMetrics(prediction),
-      ];
-    }
-
-    return [{ label: "System Status", value: "Loading" }];
-  }, [cascadeResult?.cascade_depth, currentCascadeStep, grid, prediction]);
-
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/health`, { signal: AbortSignal.timeout(5000), cache: "no-store" });
+        const payload = await response.json() as { status?: string };
+        if (active) setApiStatus(response.ok && payload.status === "ok" ? "connected" : "unavailable");
+      } catch { if (active) setApiStatus("unavailable"); }
+    };
+    void check();
+    const timer = window.setInterval(() => { void check(); }, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     setNodes(flowData.nodes.map((node) => ({ ...node, selected: node.id === scenario.input.component?.component_id })));
@@ -221,6 +127,7 @@ export function GridVisualization() {
   const selectComponent = useCallback((component: ScenarioInput["component"]) => {
     if (activeAction || component?.component_id === scenario.input.component?.component_id) return;
     configureScenario({ ...scenario.input, component, presetId: null });
+    setPanelTab(component ? "component" : "overview");
   }, [activeAction, scenario.input, configureScenario]);
 
   const handleLoadPreset = useCallback((preset: ApiDemoPreset) => {
@@ -236,6 +143,7 @@ export function GridVisualization() {
 
   const handleResetScenario = useCallback(() => {
     dispatch({ type: "reset" });
+    setPanelTab("overview");
     setCurrentStepIndex(0);
     setIsPlaying(false);
     setErrorMessage(null);
@@ -246,6 +154,7 @@ export function GridVisualization() {
     if (!component || activeAction || !scenario.baseline) return;
     const revision = scenario.revision;
     setActiveAction(action);
+    setPanelTab(action === "predict" ? "prediction" : action === "mitigation" ? "mitigation" : "overview");
     setIsPlaying(false);
     setErrorMessage(null);
     try {
@@ -314,139 +223,46 @@ export function GridVisualization() {
     setIsPlaying(true);
   }, [cascadeResult, currentStepIndex, isPlaying]);
 
-  return (
-    <ReactFlowProvider>
-      <section className="grid min-h-[calc(100vh-82px)] grid-cols-1 bg-slate-950 lg:grid-cols-[288px_minmax(0,1fr)_360px]">
-        <ControlRail
-          activeAction={activeAction}
-          onFindMitigation={handleFindMitigation}
-          onLoadPreset={handleLoadPreset}
-          onOperatingProfileChange={handleOperatingProfileChange}
-          onPredictRisk={handlePredictRisk}
-          onRunCascade={handleRunCascade}
-          onResetScenario={handleResetScenario}
-          onSimulateFailure={handleSimulateFailure}
-          operatingProfile={operatingProfile}
-          presets={demoPresets}
-          selected={selected}
-          selectedPresetId={selectedPresetId}
-        />
-
-        <div className="flex min-w-0 flex-col border-x border-slate-800">
-          <div className="border-b border-slate-800 bg-slate-900/80 px-5 py-4">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-8">
-              {dashboardMetrics.map((metric) => (
-                <Metric key={metric.label} label={metric.label} value={metric.value} />
-              ))}
-            </div>
-          </div>
-
-          {errorMessage && nodes.length > 0 ? (
-            <div className="border-b border-red-500/30 bg-red-950/70 px-5 py-3 text-sm font-medium text-red-100">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          <CascadeTimeline
-            cascade={cascadeResult}
-            currentStepIndex={currentStepIndex}
-            isPlaying={isPlaying}
-            onNextStep={handleNextStep}
-            onPlaybackSpeedChange={setPlaybackSpeed}
-            onPreviousStep={handlePreviousStep}
-            onSelectStep={handleSelectStep}
-            onTogglePlayback={handleTogglePlayback}
-            playbackSpeed={playbackSpeed}
-          />
-
-          <DemoSummaryPanel
-            selectedMitigation={selectedMitigation}
-            mitigatedCascade={mitigatedCascadeResult}
-            mitigation={mitigation}
-            originalCascade={originalCascadeResult}
-            prediction={prediction}
-            preset={demoPresets.find((preset) => preset.id === selectedPresetId) ?? null}
-          />
-
-          <div className="relative h-[720px] min-h-[560px] flex-1 bg-slate-950">
-            <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-md border border-slate-800 bg-slate-950/85 px-3 py-2 text-xs text-slate-400 shadow-xl shadow-black/40">
-              Power Network
-            </div>
-            {isLoading ? (
-              <StateMessage title="Loading grid" message="Fetching solved grid state from the FastAPI backend." />
-            ) : errorMessage && nodes.length === 0 ? (
-              <StateMessage title="Backend unavailable" message={errorMessage} />
-            ) : (
-              <ReactFlow
-                edges={edges}
-                edgeTypes={edgeTypes}
-                fitView
-                fitViewOptions={{ padding: 0.16 }}
-                minZoom={0.45}
-                nodes={nodes}
-                nodeTypes={nodeTypes}
-                onEdgesChange={onEdgesChange}
-                onNodesChange={onNodesChange}
-                onPaneClick={() => selectComponent(null)}
+  const system = systemState(grid, cascadeResult, currentStepIndex, activeAction === "cascade");
+  const scenarioName = demoPresets.find((preset) => preset.id === selectedPresetId)?.name ?? (operatingProfile === "baseline" ? "Baseline network" : `${operatingProfile[0].toUpperCase()}${operatingProfile.slice(1)} scenario`);
+  return <ReactFlowProvider>
+    <header className="topbar">
+      <Link className="brand" href="/" aria-label="Tripwire home"><Network aria-hidden="true" /><div><h1>TRIPWIRE</h1><p>Grid Cascade Intelligence</p></div></Link>
+      <div className="header-scenario"><span className="eyebrow">Scenario</span><span>{scenarioName}</span></div>
+      <div className="header-status" aria-live="polite"><span className="eyebrow">System</span><StatusBadge status={system} /></div>
+      <div className="api-status" role="status">{apiStatus === "connected" ? <CircleCheck size={14} aria-hidden="true" /> : apiStatus === "checking" ? <LoaderCircle size={14} aria-hidden="true" /> : <CircleX size={14} aria-hidden="true" />}<span>API {apiStatus}</span></div>
+      <ActionButton icon={<RotateCcw />} disabled={activeAction !== null} onClick={handleResetScenario} variant="ghost" title="Reset profile, selection, and results">Reset</ActionButton>
+    </header>
+    <main className="workspace">
+      <ScenarioControls activeAction={activeAction} input={scenario.input} selected={selected} presets={demoPresets}
+        onLoadPreset={handleLoadPreset} onProfileChange={handleOperatingProfileChange}
+        onConditionChange={(condition) => configureScenario({ ...scenario.input, condition, presetId: null })}
+        onClear={() => selectComponent(null)} onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onCascade={handleRunCascade} onMitigation={handleFindMitigation} />
+      <div className="workspace-center">
+        <section className="network-frame" aria-label="Power network">
+          <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid} /></header>
+          {errorMessage && <div className="error-banner" role="alert">{errorMessage}<button className="button button-ghost icon-button" onClick={() => configureScenario({ ...scenario.input })} title="Retry loading the scenario" aria-label="Retry loading the scenario"><RotateCcw /></button></div>}
+          <div className="network-canvas">
+            {!grid ? <div className="state-message" role="status">{isLoading ? <LoaderCircle size={24} className="loading-icon" aria-hidden="true" /> : <CircleX size={24} aria-hidden="true" />}<h3>{isLoading ? "Loading network" : "Network unavailable"}</h3></div> :
+              <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .08 }} minZoom={.2} maxZoom={1.8}
+                nodesConnectable={false} nodesDraggable={false} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
                 onNodeClick={(_, node) => selectComponent({ component_type: node.type as ApiComponentType, component_id: node.id })}
-                onEdgeClick={(_, edge) => {
-                  if (isGridLine(edge)) selectComponent({ component_type: "line", component_id: edge.id });
-                }}
-              >
-                <Background color="#1e293b" gap={18} />
-                <MiniMap
-                  nodeColor={(node) => {
-                    if (isGridNode(node)) {
-                      return statusStyles[node.data.status].edge;
-                    }
-
-                    return "#737373";
-                  }}
-                  pannable
-                  zoomable
-                />
-                <Controls />
-              </ReactFlow>
-            )}
+                onEdgeClick={(_, edge) => { if (!edge.id.startsWith("connection-")) selectComponent({ component_type: "line", component_id: edge.id }); }}>
+                <Background color="var(--color-hairline)" gap={20} size={1} />
+                <Controls showInteractive={false} />
+              </ReactFlow>}
           </div>
-        </div>
-
-        <InfoPanel
-          originalCascadeSummary={
-            originalCascadeResult
-              ? {
-                  cascadeDepth: originalCascadeResult.final_metrics.cascade_depth,
-                  failedComponents: originalCascadeResult.final_metrics.failed_components,
-                  failedLines: originalCascadeResult.final_metrics.failed_lines,
-                  loadLostPercent: originalCascadeResult.final_metrics.load_lost_percent,
-                  terminationReason: originalCascadeResult.termination_reason,
-                }
-              : null
-          }
-          mitigatedCascadeSummary={
-            mitigatedCascadeResult
-              ? {
-                  cascadeDepth: mitigatedCascadeResult.final_metrics.cascade_depth,
-                  controlledShedMw: mitigatedCascadeResult.final_metrics.controlled_shed_mw,
-                  failedComponents: mitigatedCascadeResult.final_metrics.failed_components,
-                  failedLines: mitigatedCascadeResult.final_metrics.failed_lines,
-                  involuntaryUnservedMw:
-                    mitigatedCascadeResult.final_metrics.involuntary_unserved_mw,
-                  loadLostPercent: mitigatedCascadeResult.final_metrics.load_lost_percent,
-                  terminationReason: mitigatedCascadeResult.termination_reason,
-                  totalUnservedMw: mitigatedCascadeResult.final_metrics.total_unserved_mw,
-                }
-              : null
-          }
-          mitigation={mitigation}
-          onSimulateRecommendation={handleSimulateRecommendation}
-          prediction={prediction}
-          selected={selected}
-          selectedMitigation={selectedMitigation}
-        />
-      </section>
-    </ReactFlowProvider>
-  );
+          <footer className="network-legend" aria-label="Network status legend">{["Healthy", "Stressed", "Overloaded", "Failed", "Unsupplied"].map((status) => <span key={status}><i className={`legend-line legend-${status.toLowerCase()}`} />{status}</span>)}</footer>
+        </section>
+        <CascadeTimeline cascade={cascadeResult} currentStepIndex={currentStepIndex} isPlaying={isPlaying} onNextStep={handleNextStep} onPlaybackSpeedChange={setPlaybackSpeed} onPreviousStep={handlePreviousStep} onSelectStep={handleSelectStep} onTogglePlayback={handleTogglePlayback} playbackSpeed={playbackSpeed} />
+      </div>
+      <InfoPanel tab={panelTab} onTabChange={setPanelTab} metrics={grid?.metrics ?? null} currentDepth={currentCascadeStep?.step ?? 0} busy={activeAction !== null}
+        originalCascadeSummary={originalCascadeResult ? { cascadeDepth: originalCascadeResult.cascade_depth, failedComponents: originalCascadeResult.final_metrics.failed_components, failedLines: originalCascadeResult.final_metrics.failed_lines, loadLostPercent: originalCascadeResult.final_metrics.load_lost_percent, terminationReason: originalCascadeResult.termination_reason } : null}
+        mitigatedCascadeSummary={mitigatedCascadeResult ? { cascadeDepth: mitigatedCascadeResult.cascade_depth, failedComponents: mitigatedCascadeResult.final_metrics.failed_components, failedLines: mitigatedCascadeResult.final_metrics.failed_lines, loadLostPercent: mitigatedCascadeResult.final_metrics.load_lost_percent, terminationReason: mitigatedCascadeResult.termination_reason, controlledShedMw: mitigatedCascadeResult.final_metrics.controlled_shed_mw, involuntaryUnservedMw: mitigatedCascadeResult.final_metrics.involuntary_unserved_mw, totalUnservedMw: mitigatedCascadeResult.final_metrics.total_unserved_mw } : null}
+        mitigation={mitigation} prediction={prediction} selected={selected} selectedMitigation={selectedMitigation}
+        onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onSimulateRecommendation={handleSimulateRecommendation} />
+    </main>
+  </ReactFlowProvider>;
 }
 
 function profileForCondition(condition: ApiOperatingCondition): OperatingProfileKey {
@@ -520,335 +336,4 @@ function toMitigationOutcome(outcome: ApiMitigationResponse["baseline"]) {
     unservedLoadMw: outcome.unserved_load_mw,
     terminationReason: outcome.termination_reason,
   };
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  const tone =
-    label.toLowerCase().includes("lost") ||
-    label.toLowerCase().includes("failed") ||
-    value === "Impacted"
-      ? "danger"
-      : label.toLowerCase().includes("loading") || value === "Stable"
-        ? "warning"
-        : "default";
-
-  return <MetricCard label={label} tone={tone} value={value} />;
-}
-
-function ControlRail({
-  activeAction,
-  onFindMitigation,
-  onLoadPreset,
-  onOperatingProfileChange,
-  onPredictRisk,
-  onRunCascade,
-  onResetScenario,
-  onSimulateFailure,
-  operatingProfile,
-  presets,
-  selected,
-  selectedPresetId,
-}: {
-  activeAction: ActiveAction;
-  onFindMitigation: () => void;
-  onLoadPreset: (preset: ApiDemoPreset) => void;
-  onOperatingProfileChange: (profile: OperatingProfileKey) => void;
-  onPredictRisk: () => void;
-  onRunCascade: () => void;
-  onResetScenario: () => void;
-  onSimulateFailure: () => void;
-  operatingProfile: OperatingProfileKey;
-  presets: ApiDemoPreset[];
-  selected: SelectedGridElement;
-  selectedPresetId: string | null;
-}) {
-  const busy = activeAction !== null;
-  const hasSelection = selected !== null;
-
-  return (
-    <aside className="grid content-start gap-4 bg-slate-950 p-4">
-      <SectionPanel eyebrow="Scenario" title="Demo Controls">
-        <DemoScenarioBar
-          activeAction={activeAction}
-          onLoadPreset={onLoadPreset}
-          presets={presets}
-          selectedPresetId={selectedPresetId}
-        />
-        <label className="mt-4 grid gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-          Operating Profile
-          <select
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold normal-case tracking-normal text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
-            disabled={busy}
-            onChange={(event) => onOperatingProfileChange(event.target.value as OperatingProfileKey)}
-            value={operatingProfile}
-          >
-            <option value="baseline">Baseline</option>
-            <option value="stressed">Stressed</option>
-            <option value="critical">Critical Demo</option>
-            <option value="severe">Severe</option>
-          </select>
-        </label>
-      </SectionPanel>
-
-      <SectionPanel eyebrow="Analysis" title="Actions">
-        <div className="grid gap-2">
-          <ActionButton
-            disabled={!hasSelection || busy}
-            onClick={onPredictRisk}
-            title="Estimate cascade risk using the saved ML model"
-            variant="primary"
-          >
-            {activeAction === "predict" ? "Predicting Risk..." : "Predict Risk"}
-          </ActionButton>
-          <ActionButton
-            disabled={!hasSelection || busy}
-            onClick={onRunCascade}
-            title="Run the deterministic cascade simulation"
-            variant="danger"
-          >
-            {activeAction === "cascade" ? "Running Cascade..." : "Run Cascade"}
-          </ActionButton>
-          <div className="grid grid-cols-2 gap-2">
-            <ActionButton
-              disabled={!hasSelection || busy}
-              onClick={onSimulateFailure}
-              title="Apply only the selected initial outage"
-              variant="secondary"
-            >
-              {activeAction === "failure" ? "Simulating..." : "Failure"}
-            </ActionButton>
-            <ActionButton
-              disabled={!hasSelection || busy}
-              onClick={onFindMitigation}
-              title="Evaluate mitigation candidates"
-              variant="secondary"
-            >
-              {activeAction === "mitigation" ? "Finding..." : "Mitigate"}
-            </ActionButton>
-          </div>
-          <ActionButton
-            disabled={busy}
-            onClick={onResetScenario}
-            title="Return to the healthy baseline"
-            variant="ghost"
-          >
-            {activeAction === "reset" ? "Resetting..." : "Reset Scenario"}
-          </ActionButton>
-        </div>
-        <p className="mt-3 text-xs leading-5 text-slate-500">
-          Select a grid element or load a preset before running analysis.
-        </p>
-      </SectionPanel>
-
-      <SectionPanel eyebrow="Legend" title="Component Status">
-        <div className="grid gap-2 text-sm text-slate-300">
-          <StatusLegend label="Healthy" color="bg-emerald-400" />
-          <StatusLegend label="Stressed" color="bg-amber-300" />
-          <StatusLegend label="Overloaded" color="bg-red-400" />
-          <StatusLegend label="Failed" color="bg-slate-500" />
-          <StatusLegend label="Unsupplied" color="bg-slate-300" />
-        </div>
-      </SectionPanel>
-    </aside>
-  );
-}
-
-function DemoScenarioBar({
-  activeAction,
-  onLoadPreset,
-  presets,
-  selectedPresetId,
-}: {
-  activeAction: ActiveAction;
-  onLoadPreset: (preset: ApiDemoPreset) => void;
-  presets: ApiDemoPreset[];
-  selectedPresetId: string | null;
-}) {
-  if (presets.length === 0) {
-    return null;
-  }
-
-  return (
-    <div>
-      <div className="grid gap-3">
-        <div>
-          <p className="text-xs leading-5 text-slate-500">
-            Load a deterministic simulator-backed case for the presentation path.
-          </p>
-        </div>
-        <div className="grid gap-2">
-          {presets.map((preset) => (
-            <button
-              className={`rounded-md border px-3 py-2 text-left text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-cyan-300/70 disabled:cursor-not-allowed disabled:opacity-60 ${
-                preset.id === selectedPresetId
-                  ? "border-cyan-400 bg-cyan-400 text-slate-950"
-                  : "border-slate-700 bg-slate-900 text-slate-200 hover:border-cyan-400"
-              }`}
-              disabled={activeAction !== null}
-              key={preset.id}
-              onClick={() => onLoadPreset(preset)}
-              title={preset.summary}
-              type="button"
-            >
-              {preset.name}
-            </button>
-          ))}
-        </div>
-      </div>
-      {selectedPresetId ? (
-        <p className="mt-3 text-xs leading-5 text-slate-500">
-          {presets.find((preset) => preset.id === selectedPresetId)?.summary}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function StatusLegend({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
-      {label}
-    </span>
-  );
-}
-
-function DemoSummaryPanel({
-  selectedMitigation,
-  mitigatedCascade,
-  mitigation,
-  originalCascade,
-  prediction,
-  preset,
-}: {
-  selectedMitigation: MitigationRecommendation | null;
-  mitigatedCascade: ApiCascadeResponse | null;
-  mitigation: MitigationResult | null;
-  originalCascade: ApiCascadeResponse | null;
-  prediction: RiskPrediction | null;
-  preset: ApiDemoPreset | null;
-}) {
-  if (!preset && !prediction && !originalCascade && !mitigation) {
-    return null;
-  }
-
-  const bestRecommendation = selectedMitigation ?? mitigation?.recommendations[0] ?? null;
-
-  return (
-    <section className="border-b border-slate-800 bg-slate-900/80 px-5 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-50">Demo Result Summary</h2>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            {preset ? preset.name : "Current scenario"} comparison for prediction, actual cascade, and mitigation.
-          </p>
-        </div>
-        {preset ? (
-          <div className="rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-medium text-slate-400">
-            Expected: {preset.expected_outcome.cascade_depth} depth,{" "}
-            {preset.expected_outcome.load_lost_percent.toFixed(1)}% load lost
-          </div>
-        ) : null}
-      </div>
-
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
-        <SummaryCard
-          rows={[
-            ["Cascade probability", prediction ? `${(prediction.cascadeProbability * 100).toFixed(0)}%` : "Run prediction"],
-            ["Predicted load loss", prediction ? `${prediction.predictedLoadLostPercent.toFixed(1)}%` : "Run prediction"],
-          ]}
-          title="Prediction"
-        />
-        <SummaryCard
-          rows={[
-            ["Cascade occurred", originalCascade ? (originalCascade.cascade_depth > 0 ? "Yes" : "No") : "Run cascade"],
-            ["Actual load loss", originalCascade ? `${originalCascade.final_metrics.load_lost_percent.toFixed(1)}%` : "Run cascade"],
-            ["Cascade depth", originalCascade ? originalCascade.cascade_depth.toString() : "Run cascade"],
-            ["Failed lines", originalCascade ? originalCascade.final_metrics.failed_lines.toString() : "Run cascade"],
-          ]}
-           title="Original Cascade"
-        />
-        <SummaryCard
-          rows={[
-            ["Recommended action", bestRecommendation?.description ?? "Find mitigation"],
-            [
-              "Mitigated load loss",
-              bestRecommendation ? `${bestRecommendation.outcome.loadLostPercent.toFixed(1)}%` : "Find mitigation",
-            ],
-            [
-              "Controlled shed",
-              mitigatedCascade
-                ? `${mitigatedCascade.final_metrics.controlled_shed_mw.toFixed(1)} MW`
-                : bestRecommendation
-                  ? `${bestRecommendation.outcome.controlledShedMw.toFixed(1)} MW`
-                  : "Find mitigation",
-            ],
-            [
-              "Improvement",
-              bestRecommendation
-                ? `${bestRecommendation.improvement.loadLossReductionPercentPoints.toFixed(1)} pts`
-                : "Find mitigation",
-            ],
-          ]}
-          title="Mitigation"
-        />
-      </div>
-    </section>
-  );
-}
-
-function SummaryCard({
-  rows,
-  title,
-}: {
-  rows: Array<[string, string]>;
-  title: string;
-}) {
-  return (
-    <div className="rounded-md border border-slate-800 bg-slate-950/80 p-3">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-        {title}
-      </h3>
-      <dl className="mt-2 grid gap-2">
-        {rows.map(([label, value]) => (
-          <div className="grid gap-1 text-sm" key={label}>
-            <dt className="text-xs text-slate-500">{label}</dt>
-            <dd className="font-semibold text-slate-100">{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-function predictionMetrics(prediction: RiskPrediction | null) {
-  if (!prediction) {
-    return [];
-  }
-
-  return [
-    {
-      label: "Cascade Probability",
-      value: `${(prediction.cascadeProbability * 100).toFixed(0)}%`,
-    },
-    {
-      label: "Predicted Load Loss",
-      value: `${prediction.predictedLoadLostPercent.toFixed(1)}%`,
-    },
-    {
-      label: "Risk Level",
-      value: prediction.riskLevel,
-    },
-  ];
-}
-
-function StateMessage({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="flex h-full items-center justify-center bg-neutral-50 px-6 text-center">
-      <div>
-        <h2 className="text-lg font-semibold text-neutral-950">{title}</h2>
-        <p className="mt-2 max-w-md text-sm leading-6 text-neutral-600">{message}</p>
-      </div>
-    </div>
-  );
 }
