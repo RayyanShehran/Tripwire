@@ -12,18 +12,27 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 type InfoPanelProps = {
-  cascadeSummary: CascadeSummary | null;
+  originalCascadeSummary: CascadeSummary | null;
+  mitigatedCascadeSummary: MitigatedCascadeSummary | null;
   mitigation: MitigationResult | null;
   onSimulateRecommendation: (recommendation: MitigationRecommendation) => void;
   prediction: RiskPrediction | null;
   selected: SelectedGridElement;
+  selectedMitigation: MitigationRecommendation | null;
 };
 
 export type CascadeSummary = {
   cascadeDepth: number;
   failedComponents: number;
+  failedLines: number;
   loadLostPercent: number;
   terminationReason: string;
+};
+
+export type MitigatedCascadeSummary = CascadeSummary & {
+  controlledShedMw: number;
+  involuntaryUnservedMw: number;
+  totalUnservedMw: number;
 };
 
 export type OperatingProfileKey = "baseline" | "stressed" | "critical" | "severe";
@@ -37,6 +46,7 @@ export type ActiveAction =
   | "recommendation";
 
 export type RiskPrediction = {
+  scenarioId: string;
   cascadeProbability: number;
   predictedLoadLostPercent: number;
   riskLevel: string;
@@ -46,6 +56,11 @@ export type RiskPrediction = {
 };
 
 export type MitigationOutcome = {
+  originalDemandMw: number;
+  servedLoadMw: number;
+  controlledShedMw: number;
+  involuntaryUnservedMw: number;
+  totalUnservedMw: number;
   loadLostPercent: number;
   cascadeDepth: number;
   failedLines: number;
@@ -70,6 +85,7 @@ export type MitigationRecommendation = {
 };
 
 export type MitigationResult = {
+  scenarioId: string;
   baseline: MitigationOutcome;
   recommendations: MitigationRecommendation[];
   summary: string;
@@ -78,11 +94,13 @@ export type MitigationResult = {
 };
 
 export function InfoPanel({
-  cascadeSummary,
+  originalCascadeSummary,
+  mitigatedCascadeSummary,
   mitigation,
   onSimulateRecommendation,
   prediction,
   selected,
+  selectedMitigation,
 }: InfoPanelProps) {
   if (!selected) {
     return (
@@ -97,7 +115,11 @@ export function InfoPanel({
           mitigation={mitigation}
           onSimulateRecommendation={onSimulateRecommendation}
         />
-        <CascadeSummaryPanel summary={cascadeSummary} />
+        <CascadeComparisonPanel
+          mitigated={mitigatedCascadeSummary}
+          original={originalCascadeSummary}
+          selectedMitigation={selectedMitigation}
+        />
         <HelpPanel />
         <MethodologyPanel />
       </aside>
@@ -131,7 +153,11 @@ export function InfoPanel({
           mitigation={mitigation}
           onSimulateRecommendation={onSimulateRecommendation}
         />
-        <CascadeSummaryPanel summary={cascadeSummary} />
+        <CascadeComparisonPanel
+          mitigated={mitigatedCascadeSummary}
+          original={originalCascadeSummary}
+          selectedMitigation={selectedMitigation}
+        />
         <HelpPanel />
         <MethodologyPanel />
       </aside>
@@ -163,7 +189,11 @@ export function InfoPanel({
         mitigation={mitigation}
         onSimulateRecommendation={onSimulateRecommendation}
       />
-      <CascadeSummaryPanel summary={cascadeSummary} />
+      <CascadeComparisonPanel
+        mitigated={mitigatedCascadeSummary}
+        original={originalCascadeSummary}
+        selectedMitigation={selectedMitigation}
+      />
       <HelpPanel />
       <MethodologyPanel />
     </aside>
@@ -223,6 +253,14 @@ function MitigationPanel({
                 <Row
                   label="Load lost"
                   value={`${mitigation.baseline.loadLostPercent.toFixed(1)}% -> ${recommendation.outcome.loadLostPercent.toFixed(1)}%`}
+                />
+                <Row
+                  label="Controlled shed"
+                  value={`${recommendation.outcome.controlledShedMw.toFixed(1)} MW`}
+                />
+                <Row
+                  label="Involuntary unserved"
+                  value={`${recommendation.outcome.involuntaryUnservedMw.toFixed(1)} MW`}
                 />
                 <Row
                   label="Cascade depth"
@@ -292,20 +330,66 @@ function PredictionPanel({ prediction }: { prediction: RiskPrediction | null }) 
   );
 }
 
-function CascadeSummaryPanel({ summary }: { summary: CascadeSummary | null }) {
-  if (!summary) {
+function CascadeComparisonPanel({
+  mitigated,
+  original,
+  selectedMitigation,
+}: {
+  mitigated: MitigatedCascadeSummary | null;
+  original: CascadeSummary | null;
+  selectedMitigation: MitigationRecommendation | null;
+}) {
+  if (!original) {
     return null;
   }
 
+  const loadLossReduction = mitigated
+    ? Math.max(original.loadLostPercent - mitigated.loadLostPercent, 0)
+    : null;
+  const failedLinesPrevented = mitigated
+    ? Math.max(original.failedLines - mitigated.failedLines, 0)
+    : null;
+
   return (
     <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/60 p-4">
-      <h3 className="text-sm font-semibold text-slate-50">Cascade Result</h3>
+      <h3 className="text-sm font-semibold text-slate-50">Scenario Comparison</h3>
+      <h4 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Original Cascade
+      </h4>
       <dl className="mt-3">
-        <Row label="Termination" value={formatReason(summary.terminationReason)} />
-        <Row label="Depth" value={summary.cascadeDepth.toString()} />
-        <Row label="Load lost" value={`${summary.loadLostPercent.toFixed(1)}%`} />
-        <Row label="Failed components" value={summary.failedComponents.toString()} />
+        <Row label="Load lost" value={`${original.loadLostPercent.toFixed(1)}%`} />
+        <Row label="Failed lines" value={original.failedLines.toString()} />
+        <Row label="Cascade depth" value={original.cascadeDepth.toString()} />
       </dl>
+      {mitigated ? (
+        <>
+          <h4 className="mt-4 border-t border-slate-800 pt-4 text-xs font-semibold uppercase tracking-wide text-cyan-300">
+            Mitigated
+          </h4>
+          {selectedMitigation ? (
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {selectedMitigation.description}
+            </p>
+          ) : null}
+          <dl className="mt-2">
+            <Row label="Controlled shed" value={`${mitigated.controlledShedMw.toFixed(1)} MW`} />
+            <Row
+              label="Involuntary unserved"
+              value={`${mitigated.involuntaryUnservedMw.toFixed(1)} MW`}
+            />
+            <Row label="Total load lost" value={`${mitigated.loadLostPercent.toFixed(1)}%`} />
+            <Row label="Failed lines" value={mitigated.failedLines.toString()} />
+            <Row label="Cascade depth" value={mitigated.cascadeDepth.toString()} />
+          </dl>
+          <h4 className="mt-4 border-t border-slate-800 pt-4 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+            Improvement
+          </h4>
+          <dl className="mt-2">
+            <Row label="Load-loss reduction" value={`${loadLossReduction?.toFixed(1)} pts`} />
+            <Row label="Failed lines prevented" value={failedLinesPrevented?.toString() ?? "0"} />
+          </dl>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -368,10 +452,6 @@ function MethodologyPanel() {
       </p>
     </div>
   );
-}
-
-function formatReason(reason: string) {
-  return reason.replaceAll("_", " ");
 }
 
 function formatActionType(actionType: string) {

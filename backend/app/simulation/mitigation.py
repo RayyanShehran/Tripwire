@@ -52,6 +52,7 @@ class RecommendationResponse(TypedDict):
     scenario_id: str
     scenario_config: dict[str, object]
     baseline: MitigationOutcome
+    baseline_cascade_result: CascadeResponse
     recommendations: list[dict[str, Any]]
     summary: str
     candidate_count: int
@@ -126,6 +127,7 @@ def recommend_mitigations(
         "scenario_id": scenario_fingerprint(config),
         "scenario_config": scenario_config_payload(config),
         "baseline": baseline,
+        "baseline_cascade_result": baseline_result,
         "recommendations": [
             {**item, "rank": index + 1}
             for index, item in enumerate(selected)

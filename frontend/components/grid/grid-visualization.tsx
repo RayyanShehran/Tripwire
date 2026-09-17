@@ -31,6 +31,7 @@ import {
   type ApiCascadeStep,
   type ApiComponentType,
   type ApiDemoPreset,
+  type ApiFailureResponse,
   type ApiGridResponse,
   type ApiMitigationRecommendation,
   type ApiMitigationResponse,
@@ -73,7 +74,10 @@ function isGridLine(edge: Edge): edge is GridLine {
 export function GridVisualization() {
   const apiBaseUrl = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
   const [grid, setGrid] = useState<ApiGridResponse | null>(null);
-  const [cascadeResult, setCascadeResult] = useState<ApiCascadeResponse | null>(null);
+  const [originalCascadeResult, setOriginalCascadeResult] = useState<ApiCascadeResponse | null>(null);
+  const [mitigatedCascadeResult, setMitigatedCascadeResult] = useState<ApiCascadeResponse | null>(null);
+  const cascadeResult = mitigatedCascadeResult ?? originalCascadeResult;
+  const [, setFailureResult] = useState<ApiFailureResponse | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -90,6 +94,7 @@ export function GridVisualization() {
   const [operatingProfile, setOperatingProfile] = useState<OperatingProfileKey>("baseline");
   const [prediction, setPrediction] = useState<RiskPrediction | null>(null);
   const [mitigation, setMitigation] = useState<MitigationResult | null>(null);
+  const [selectedMitigation, setSelectedMitigation] = useState<MitigationRecommendation | null>(null);
   const [recommendationCascades, setRecommendationCascades] = useState(
     new Map<number, ApiCascadeResponse>(),
   );
@@ -185,6 +190,19 @@ export function GridVisualization() {
     [setEdges, setNodes],
   );
 
+  const clearScenarioResults = useCallback(() => {
+    setFailureResult(null);
+    setPrediction(null);
+    setOriginalCascadeResult(null);
+    setMitigatedCascadeResult(null);
+    setMitigation(null);
+    setSelectedMitigation(null);
+    setRecommendationCascades(new Map());
+    setSelectedPresetId(null);
+    setCurrentStepIndex(0);
+    setIsPlaying(false);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     async function loadGrid() {
@@ -263,26 +281,20 @@ export function GridVisualization() {
 
       if (firstNode && isGridNode(firstNode)) {
         setSelected({ kind: "node", item: firstNode });
-        setPrediction(null);
-        setMitigation(null);
-        setSelectedPresetId(null);
+        clearScenarioResults();
         return;
       }
 
       if (firstEdge && isGridLine(firstEdge)) {
         setSelected({ kind: "line", item: firstEdge });
-        setPrediction(null);
-        setMitigation(null);
-        setSelectedPresetId(null);
+        clearScenarioResults();
         return;
       }
 
       setSelected(null);
-      setPrediction(null);
-      setMitigation(null);
-      setSelectedPresetId(null);
+      clearScenarioResults();
     },
-    [],
+    [clearScenarioResults],
   );
 
   const handleLoadPreset = useCallback(
@@ -296,12 +308,7 @@ export function GridVisualization() {
         setGrid(response);
         setNodes(nextFlowData.nodes);
         setEdges(nextFlowData.edges);
-        setCascadeResult(null);
-        setPrediction(null);
-        setMitigation(null);
-        setRecommendationCascades(new Map());
-        setCurrentStepIndex(0);
-        setIsPlaying(false);
+        clearScenarioResults();
         setOperatingProfile(profileForCondition(preset.operating_condition));
         setSelectedPresetId(preset.id);
         setSelected(findPresetSelection(preset, nextFlowData));
@@ -313,7 +320,7 @@ export function GridVisualization() {
         setActiveAction(null);
       }
     },
-    [apiBaseUrl, setEdges, setNodes],
+    [apiBaseUrl, clearScenarioResults, setEdges, setNodes],
   );
 
   const handleSimulateFailure = useCallback(async () => {
@@ -331,15 +338,11 @@ export function GridVisualization() {
         apiBaseUrl,
         componentType as ApiComponentType,
         componentId,
+        operatingConditions[operatingProfile],
       );
-      setCascadeResult(null);
-      setPrediction(null);
-      setMitigation(null);
-      setRecommendationCascades(new Map());
-      setSelectedPresetId(null);
-      setCurrentStepIndex(0);
-      setIsPlaying(false);
-      applyGridResponse(response);
+      clearScenarioResults();
+      setFailureResult(response);
+      applyGridResponse(response.grid);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to simulate failure",
@@ -347,20 +350,16 @@ export function GridVisualization() {
     } finally {
       setActiveAction(null);
     }
-  }, [apiBaseUrl, applyGridResponse, selected]);
+  }, [apiBaseUrl, applyGridResponse, clearScenarioResults, operatingProfile, selected]);
 
   const handleResetScenario = useCallback(async () => {
     try {
       setActiveAction("reset");
       setErrorMessage(null);
       const response = await resetScenario(apiBaseUrl);
-      setCascadeResult(null);
-      setPrediction(null);
-      setMitigation(null);
-      setRecommendationCascades(new Map());
-      setSelectedPresetId(null);
-      setCurrentStepIndex(0);
-      setIsPlaying(false);
+      clearScenarioResults();
+      setOperatingProfile("baseline");
+      setSelected(null);
       applyGridResponse(response);
     } catch (error) {
       setErrorMessage(
@@ -369,7 +368,7 @@ export function GridVisualization() {
     } finally {
       setActiveAction(null);
     }
-  }, [apiBaseUrl, applyGridResponse]);
+  }, [apiBaseUrl, applyGridResponse, clearScenarioResults]);
 
   const handleRunCascade = useCallback(async () => {
     if (!selected) {
@@ -389,7 +388,12 @@ export function GridVisualization() {
         operatingConditions[operatingProfile],
       );
 
-      setCascadeResult(response);
+      setFailureResult(null);
+      setOriginalCascadeResult(response);
+      setMitigatedCascadeResult(null);
+      setMitigation(null);
+      setSelectedMitigation(null);
+      setRecommendationCascades(new Map());
       setPrediction((currentPrediction) =>
         currentPrediction
           ? {
@@ -428,6 +432,9 @@ export function GridVisualization() {
         operatingConditions[operatingProfile],
       );
       setMitigation(toMitigationResult(response));
+      setOriginalCascadeResult((current) => current ?? response.baseline_cascade_result);
+      setMitigatedCascadeResult(null);
+      setSelectedMitigation(null);
       setRecommendationCascades(toRecommendationCascadeMap(response.recommendations));
     } catch (error) {
       setErrorMessage(
@@ -445,7 +452,8 @@ export function GridVisualization() {
         return;
       }
       setActiveAction("recommendation");
-      setCascadeResult(recommendedCascade);
+      setSelectedMitigation(recommendation);
+      setMitigatedCascadeResult(recommendedCascade);
       setCurrentStepIndex(0);
       setIsPlaying(recommendedCascade.steps.length > 1);
       window.setTimeout(() => setActiveAction(null), 0);
@@ -479,6 +487,21 @@ export function GridVisualization() {
       setActiveAction(null);
     }
   }, [apiBaseUrl, operatingProfile, selected]);
+
+  const handleOperatingProfileChange = useCallback(
+    (profile: OperatingProfileKey) => {
+      setOperatingProfile(profile);
+      clearScenarioResults();
+      void resetScenario(apiBaseUrl)
+        .then((response) => applyGridResponse(response, undefined, selectedRef.current))
+        .catch((error: unknown) => {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Unable to reset scenario state",
+          );
+        });
+    },
+    [apiBaseUrl, applyGridResponse, clearScenarioResults],
+  );
 
   const handleSelectStep = useCallback((stepIndex: number) => {
     setCurrentStepIndex(stepIndex);
@@ -522,13 +545,7 @@ export function GridVisualization() {
           activeAction={activeAction}
           onFindMitigation={handleFindMitigation}
           onLoadPreset={handleLoadPreset}
-          onOperatingProfileChange={(profile) => {
-            setOperatingProfile(profile);
-            setPrediction(null);
-            setMitigation(null);
-            setRecommendationCascades(new Map());
-            setSelectedPresetId(null);
-          }}
+          onOperatingProfileChange={handleOperatingProfileChange}
           onPredictRisk={handlePredictRisk}
           onRunCascade={handleRunCascade}
           onResetScenario={handleResetScenario}
@@ -567,8 +584,9 @@ export function GridVisualization() {
           />
 
           <DemoSummaryPanel
-            cascade={cascadeResult}
+            mitigatedCascade={mitigatedCascadeResult}
             mitigation={mitigation}
+            originalCascade={originalCascadeResult}
             prediction={prediction}
             preset={demoPresets.find((preset) => preset.id === selectedPresetId) ?? null}
           />
@@ -614,13 +632,29 @@ export function GridVisualization() {
         </div>
 
         <InfoPanel
-          cascadeSummary={
-            cascadeResult
+          originalCascadeSummary={
+            originalCascadeResult
               ? {
-                  cascadeDepth: cascadeResult.final_metrics.cascade_depth,
-                  failedComponents: cascadeResult.final_metrics.failed_components,
-                  loadLostPercent: cascadeResult.final_metrics.load_lost_percent,
-                  terminationReason: cascadeResult.termination_reason,
+                  cascadeDepth: originalCascadeResult.final_metrics.cascade_depth,
+                  failedComponents: originalCascadeResult.final_metrics.failed_components,
+                  failedLines: originalCascadeResult.final_metrics.failed_lines,
+                  loadLostPercent: originalCascadeResult.final_metrics.load_lost_percent,
+                  terminationReason: originalCascadeResult.termination_reason,
+                }
+              : null
+          }
+          mitigatedCascadeSummary={
+            mitigatedCascadeResult
+              ? {
+                  cascadeDepth: mitigatedCascadeResult.final_metrics.cascade_depth,
+                  controlledShedMw: mitigatedCascadeResult.final_metrics.controlled_shed_mw,
+                  failedComponents: mitigatedCascadeResult.final_metrics.failed_components,
+                  failedLines: mitigatedCascadeResult.final_metrics.failed_lines,
+                  involuntaryUnservedMw:
+                    mitigatedCascadeResult.final_metrics.involuntary_unserved_mw,
+                  loadLostPercent: mitigatedCascadeResult.final_metrics.load_lost_percent,
+                  terminationReason: mitigatedCascadeResult.termination_reason,
+                  totalUnservedMw: mitigatedCascadeResult.final_metrics.total_unserved_mw,
                 }
               : null
           }
@@ -628,6 +662,7 @@ export function GridVisualization() {
           onSimulateRecommendation={handleSimulateRecommendation}
           prediction={prediction}
           selected={selected}
+          selectedMitigation={selectedMitigation}
         />
       </section>
     </ReactFlowProvider>
@@ -711,6 +746,7 @@ function findMatchingSelection(
 
 function toRiskPrediction(response: ApiPredictionResponse): RiskPrediction {
   return {
+    scenarioId: response.scenario_id,
     cascadeProbability: response.cascade_probability,
     predictedLoadLostPercent: response.predicted_load_lost_percent,
     riskLevel: response.risk_level,
@@ -720,6 +756,7 @@ function toRiskPrediction(response: ApiPredictionResponse): RiskPrediction {
 
 function toMitigationResult(response: ApiMitigationResponse): MitigationResult {
   return {
+    scenarioId: response.scenario_id,
     baseline: toMitigationOutcome(response.baseline),
     recommendations: response.recommendations.map(toMitigationRecommendation),
     summary: response.summary,
@@ -750,6 +787,11 @@ function toMitigationRecommendation(
 
 function toMitigationOutcome(outcome: ApiMitigationResponse["baseline"]) {
   return {
+    originalDemandMw: outcome.original_demand_mw,
+    servedLoadMw: outcome.served_load_mw,
+    controlledShedMw: outcome.controlled_shed_mw,
+    involuntaryUnservedMw: outcome.involuntary_unserved_mw,
+    totalUnservedMw: outcome.total_unserved_mw,
     loadLostPercent: outcome.load_lost_percent,
     cascadeDepth: outcome.cascade_depth,
     failedLines: outcome.failed_lines,
@@ -959,17 +1001,19 @@ function StatusLegend({ color, label }: { color: string; label: string }) {
 }
 
 function DemoSummaryPanel({
-  cascade,
+  mitigatedCascade,
   mitigation,
+  originalCascade,
   prediction,
   preset,
 }: {
-  cascade: ApiCascadeResponse | null;
+  mitigatedCascade: ApiCascadeResponse | null;
   mitigation: MitigationResult | null;
+  originalCascade: ApiCascadeResponse | null;
   prediction: RiskPrediction | null;
   preset: ApiDemoPreset | null;
 }) {
-  if (!preset && !prediction && !cascade && !mitigation) {
+  if (!preset && !prediction && !originalCascade && !mitigation) {
     return null;
   }
 
@@ -1002,10 +1046,10 @@ function DemoSummaryPanel({
         />
         <SummaryCard
           rows={[
-            ["Cascade occurred", cascade ? (cascade.cascade_depth > 0 ? "Yes" : "No") : "Run cascade"],
-            ["Actual load loss", cascade ? `${cascade.final_metrics.load_lost_percent.toFixed(1)}%` : "Run cascade"],
-            ["Cascade depth", cascade ? cascade.cascade_depth.toString() : "Run cascade"],
-            ["Failed lines", cascade ? cascade.final_metrics.failed_lines.toString() : "Run cascade"],
+            ["Cascade occurred", originalCascade ? (originalCascade.cascade_depth > 0 ? "Yes" : "No") : "Run cascade"],
+            ["Actual load loss", originalCascade ? `${originalCascade.final_metrics.load_lost_percent.toFixed(1)}%` : "Run cascade"],
+            ["Cascade depth", originalCascade ? originalCascade.cascade_depth.toString() : "Run cascade"],
+            ["Failed lines", originalCascade ? originalCascade.final_metrics.failed_lines.toString() : "Run cascade"],
           ]}
           title="Actual"
         />
@@ -1015,6 +1059,14 @@ function DemoSummaryPanel({
             [
               "Mitigated load loss",
               bestRecommendation ? `${bestRecommendation.outcome.loadLostPercent.toFixed(1)}%` : "Find mitigation",
+            ],
+            [
+              "Controlled shed",
+              mitigatedCascade
+                ? `${mitigatedCascade.final_metrics.controlled_shed_mw.toFixed(1)} MW`
+                : bestRecommendation
+                  ? `${bestRecommendation.outcome.controlledShedMw.toFixed(1)} MW`
+                  : "Find mitigation",
             ],
             [
               "Improvement",

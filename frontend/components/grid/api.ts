@@ -26,8 +26,12 @@ export type ApiGridLine = {
 };
 
 export type ApiGridMetrics = {
+  original_demand_mw: number;
   total_demand_mw: number;
   served_load_mw: number;
+  controlled_shed_mw: number;
+  involuntary_unserved_mw: number;
+  total_unserved_mw: number;
   unserved_load_mw: number;
   load_lost_percent: number;
   total_generation_mw: number;
@@ -43,8 +47,12 @@ export type ApiGridResponse = {
 };
 
 export type ApiCascadeFinalMetrics = {
+  original_demand_mw: number;
   total_demand_mw: number;
   served_load_mw: number;
+  controlled_shed_mw: number;
+  involuntary_unserved_mw: number;
+  total_unserved_mw: number;
   unserved_load_mw: number;
   load_lost_percent: number;
   total_generation_mw: number;
@@ -56,6 +64,8 @@ export type ApiCascadeFinalMetrics = {
 };
 
 export type ApiFailureResponse = {
+  scenario_id: string;
+  scenario_config: ApiScenarioConfig;
   status: "solved" | "blackout";
   termination_reason: "solved" | "no_slack_source" | "total_blackout";
   initial_failure: {
@@ -86,6 +96,8 @@ export type ApiCascadeStep = {
 };
 
 export type ApiCascadeResponse = {
+  scenario_id: string;
+  scenario_config: ApiScenarioConfig;
   initial_failure: {
     component_type: ApiComponentType;
     component_id: string;
@@ -108,7 +120,16 @@ export type ApiOperatingCondition = {
   dispatch_profile: string;
 };
 
+export type ApiScenarioConfig = ApiOperatingCondition & {
+  preset_id: string | null;
+  initial_component_type: ApiComponentType;
+  initial_component_id: string;
+  seed: number;
+};
+
 export type ApiPredictionResponse = {
+  scenario_id: string;
+  scenario_config: ApiScenarioConfig;
   cascade_probability: number;
   predicted_load_lost_percent: number;
   risk_level: "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
@@ -116,6 +137,11 @@ export type ApiPredictionResponse = {
 };
 
 export type ApiMitigationOutcome = {
+  original_demand_mw: number;
+  served_load_mw: number;
+  controlled_shed_mw: number;
+  involuntary_unserved_mw: number;
+  total_unserved_mw: number;
   load_lost_percent: number;
   cascade_depth: number;
   failed_lines: number;
@@ -142,7 +168,10 @@ export type ApiMitigationRecommendation = {
 };
 
 export type ApiMitigationResponse = {
+  scenario_id: string;
+  scenario_config: ApiScenarioConfig;
   baseline: ApiMitigationOutcome;
+  baseline_cascade_result: ApiCascadeResponse;
   recommendations: ApiMitigationRecommendation[];
   summary: string;
   candidate_count: number;
@@ -208,12 +237,14 @@ export async function simulateFailure(
   apiBaseUrl: string,
   componentType: ApiComponentType,
   componentId: string,
-): Promise<ApiGridResponse> {
+  operatingCondition: ApiOperatingCondition,
+): Promise<ApiFailureResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/failure`, {
     body: JSON.stringify({
       component_type: componentType,
       component_id: componentId,
+      operating_condition: operatingCondition,
     }),
     cache: "no-store",
     headers: {
@@ -226,8 +257,7 @@ export async function simulateFailure(
     throw new Error(await apiErrorMessage(response, "Unable to simulate failure"));
   }
 
-  const payload = (await response.json()) as ApiFailureResponse;
-  return payload.grid;
+  return (await response.json()) as ApiFailureResponse;
 }
 
 export async function resetScenario(apiBaseUrl: string): Promise<ApiGridResponse> {
