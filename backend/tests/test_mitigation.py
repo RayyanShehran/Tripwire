@@ -3,9 +3,10 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.ml.dataset import ScenarioCandidate, ScenarioConfig, create_operating_grid
+from app.simulation.config import ScenarioCandidate, ScenarioConfig, build_scenario_network
 from app.main import app
 from app.simulation.mitigation import (
     MAX_GENERATOR_REDISPATCH_PERCENT,
@@ -193,7 +194,7 @@ def test_recommend_api_rejects_invalid_component() -> None:
 
 
 def test_mitigated_grid_does_not_shed_more_load_than_exists() -> None:
-    net = create_operating_grid(severe_line_config())
+    net = build_scenario_network(severe_line_config())
     original_load = float(net.load["p_mw"].sum())
     candidates = generate_candidate_actions(severe_line_config(), max_candidates=30)
     shedding = next(candidate for candidate in candidates if candidate.action_type == "load_shedding")
@@ -203,6 +204,23 @@ def test_mitigated_grid_does_not_shed_more_load_than_exists() -> None:
     apply_mitigation_action(net, shedding)
 
     assert 0.0 <= float(net.load["p_mw"].sum()) <= original_load
+
+
+def test_generator_redispatch_preserves_demand() -> None:
+    config = severe_line_config()
+    net = build_scenario_network(config)
+    original_demand = float(net.load["p_mw"].sum())
+    action = next(
+        candidate
+        for candidate in generate_candidate_actions(config, max_candidates=30)
+        if candidate.action_type == "generator_redispatch"
+    )
+
+    from app.simulation.mitigation import apply_mitigation_action
+
+    apply_mitigation_action(net, action)
+
+    assert float(net.load["p_mw"].sum()) == pytest.approx(original_demand)
 
 
 def assert_no_nonfinite_numbers(value: Any) -> None:
