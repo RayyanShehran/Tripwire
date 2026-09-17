@@ -13,6 +13,12 @@ from app.ml.features import feature_frame_from_config, validate_feature_payload
 from app.ml.schemas import MODEL_VERSION, ModelBundle, PredictionResult, risk_level
 from app.ml.train import CLASSIFIER_ARTIFACT, METADATA_ARTIFACT, MODEL_DIR, REGRESSOR_ARTIFACT
 from app.simulation.grid import GridComponentType
+from app.simulation.config import (
+    ScenarioConfig,
+    scenario_config,
+    scenario_config_payload,
+    scenario_fingerprint,
+)
 
 
 class ModelNotTrainedError(RuntimeError):
@@ -62,15 +68,36 @@ def predict_from_scenario(
     dispatch_profile: str = "balanced",
     model_dir: str | Path = MODEL_DIR,
 ) -> PredictionResult:
-    frame = feature_frame_from_config(
-        component_type=component_type,
-        component_id=component_id,
-        load_multiplier=load_multiplier,
-        generation_multiplier=generation_multiplier,
-        line_rating_multiplier=line_rating_multiplier,
-        dispatch_profile=dispatch_profile,
+    config = scenario_config(
+        component_type,
+        component_id,
+        {
+            "load_multiplier": load_multiplier,
+            "generation_multiplier": generation_multiplier,
+            "line_rating_multiplier": line_rating_multiplier,
+            "dispatch_profile": dispatch_profile,
+        },
     )
-    return predict_from_frame(frame, model_dir=model_dir)
+    return predict_from_config(config, model_dir=model_dir)
+
+
+def predict_from_config(
+    config: ScenarioConfig,
+    model_dir: str | Path = MODEL_DIR,
+) -> PredictionResult:
+    frame = feature_frame_from_config(
+        component_type=config.initial_failure.component_type,
+        component_id=config.initial_failure.component_id,
+        load_multiplier=config.load_multiplier,
+        generation_multiplier=config.generation_multiplier,
+        line_rating_multiplier=config.line_rating_multiplier,
+        dispatch_profile=config.dispatch_profile,
+        seed=config.seed,
+    )
+    result = predict_from_frame(frame, model_dir=model_dir)
+    result["scenario_id"] = scenario_fingerprint(config)
+    result["scenario_config"] = scenario_config_payload(config)
+    return result
 
 
 def predict_from_frame(frame: pd.DataFrame, model_dir: str | Path = MODEL_DIR) -> PredictionResult:
@@ -89,6 +116,8 @@ def predict_from_frame(frame: pd.DataFrame, model_dir: str | Path = MODEL_DIR) -
     model_version = str(metadata.get("model_version") or MODEL_VERSION)
 
     return {
+        "scenario_id": "feature-payload",
+        "scenario_config": {},
         "cascade_probability": round(probability, 4),
         "predicted_load_lost_percent": round(load_loss, 2),
         "risk_level": risk_level(probability),

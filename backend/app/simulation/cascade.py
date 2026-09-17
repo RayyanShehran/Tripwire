@@ -12,6 +12,13 @@ from app.simulation.grid import (
     run_power_flow,
     serialize_grid_state,
 )
+from app.simulation.config import (
+    ScenarioConfig,
+    build_scenario_network,
+    scenario_config as make_scenario_config,
+    scenario_config_payload,
+    scenario_fingerprint,
+)
 
 CASCADE_TRIP_THRESHOLD_PERCENT = 100.0
 DEFAULT_MAX_CASCADE_STEPS = 20
@@ -37,8 +44,12 @@ class OverloadedLine(TypedDict):
 
 
 class CascadeStepMetrics(TypedDict):
+    original_demand_mw: float
     total_demand_mw: float
     served_load_mw: float
+    controlled_shed_mw: float
+    involuntary_unserved_mw: float
+    total_unserved_mw: float
     unserved_load_mw: float
     load_lost_percent: float
     total_generation_mw: float
@@ -58,8 +69,12 @@ class CascadeStep(TypedDict):
 
 
 class CascadeFinalMetrics(TypedDict):
+    original_demand_mw: float
     total_demand_mw: float
     served_load_mw: float
+    controlled_shed_mw: float
+    involuntary_unserved_mw: float
+    total_unserved_mw: float
     unserved_load_mw: float
     load_lost_percent: float
     total_generation_mw: float
@@ -71,6 +86,8 @@ class CascadeFinalMetrics(TypedDict):
 
 
 class CascadeResponse(TypedDict):
+    scenario_id: str
+    scenario_config: dict[str, object]
     initial_failure: FailedComponent
     termination_reason: TerminationReason
     cascade_depth: int
@@ -84,13 +101,25 @@ def simulate_cascade(
     max_steps: int = DEFAULT_MAX_CASCADE_STEPS,
     cascade_trip_threshold_percent: float = CASCADE_TRIP_THRESHOLD_PERCENT,
     net_factory: Callable[[], Any] | None = None,
+    config: ScenarioConfig | None = None,
 ) -> CascadeResponse:
     if max_steps < 0:
         raise ValueError("max_steps must be greater than or equal to 0")
     if cascade_trip_threshold_percent <= 0:
         raise ValueError("cascade_trip_threshold_percent must be greater than 0")
 
-    net = net_factory() if net_factory is not None else create_test_grid()
+    resolved_config = config or make_scenario_config(component_type, component_id)
+    if resolved_config.initial_failure.component_type != component_type or (
+        resolved_config.initial_failure.component_id != component_id
+    ):
+        raise ValueError("Scenario initial failure does not match requested failure")
+
+    if net_factory is not None:
+        net = net_factory()
+    elif config is not None:
+        net = build_scenario_network(resolved_config)
+    else:
+        net = create_test_grid()
     initial_failure: FailedComponent = {
         "component_type": component_type,
         "component_id": component_id,
@@ -156,6 +185,8 @@ def simulate_cascade(
     final_metrics = _final_metrics(steps)
 
     return {
+        "scenario_id": scenario_fingerprint(resolved_config),
+        "scenario_config": scenario_config_payload(resolved_config),
         "initial_failure": initial_failure,
         "termination_reason": termination_reason,
         "cascade_depth": final_metrics["cascade_depth"],
@@ -178,8 +209,12 @@ def _build_step(
         "overloaded_lines": overloaded_lines,
         "grid": grid,
         "metrics": {
+            "original_demand_mw": grid["metrics"]["original_demand_mw"],
             "total_demand_mw": grid["metrics"]["total_demand_mw"],
             "served_load_mw": grid["metrics"]["served_load_mw"],
+            "controlled_shed_mw": grid["metrics"]["controlled_shed_mw"],
+            "involuntary_unserved_mw": grid["metrics"]["involuntary_unserved_mw"],
+            "total_unserved_mw": grid["metrics"]["total_unserved_mw"],
             "unserved_load_mw": grid["metrics"]["unserved_load_mw"],
             "load_lost_percent": grid["metrics"]["load_lost_percent"],
             "total_generation_mw": grid["metrics"]["total_generation_mw"],
@@ -240,8 +275,12 @@ def _final_metrics(steps: list[CascadeStep]) -> CascadeFinalMetrics:
         load_lost_percent = round((unserved_load / total_demand) * 100, 2)
 
     return {
+        "original_demand_mw": final_step["metrics"]["original_demand_mw"],
         "total_demand_mw": total_demand,
         "served_load_mw": final_step["metrics"]["served_load_mw"],
+        "controlled_shed_mw": final_step["metrics"]["controlled_shed_mw"],
+        "involuntary_unserved_mw": final_step["metrics"]["involuntary_unserved_mw"],
+        "total_unserved_mw": final_step["metrics"]["total_unserved_mw"],
         "unserved_load_mw": unserved_load,
         "load_lost_percent": load_lost_percent,
         "total_generation_mw": final_step["metrics"]["total_generation_mw"],

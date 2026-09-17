@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, TypedDict
 
-from app.ml.dataset import ScenarioCandidate, ScenarioConfig
+from app.simulation.config import ScenarioCandidate, ScenarioConfig
 
 
 class DemoOperatingCondition(TypedDict):

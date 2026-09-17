@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal, TypedDict
 
-from app.ml.dataset import (
+from app.simulation.config import (
     DISPATCH_FACTORS,
     GENERATOR_CAPACITY_MW,
-    ScenarioCandidate,
     ScenarioConfig,
-    create_operating_grid,
+    build_scenario_network,
+    scenario_config,
+    scenario_config_payload,
+    scenario_fingerprint,
 )
 from app.simulation.cascade import CascadeResponse, simulate_cascade
 from app.simulation.grid import GridComponentNotFoundError, GridComponentType
@@ -25,6 +27,11 @@ INTERVENTION_COST_WEIGHT = 0.25
 
 
 class MitigationOutcome(TypedDict):
+    original_demand_mw: float
+    served_load_mw: float
+    controlled_shed_mw: float
+    involuntary_unserved_mw: float
+    total_unserved_mw: float
     load_lost_percent: float
     cascade_depth: int
     failed_lines: int
@@ -42,6 +49,8 @@ class MitigationImprovement(TypedDict):
 
 
 class RecommendationResponse(TypedDict):
+    scenario_id: str
+    scenario_config: dict[str, object]
     baseline: MitigationOutcome
     recommendations: list[dict[str, Any]]
     summary: str
@@ -64,15 +73,16 @@ def recommend_mitigations(
     component_type: GridComponentType,
     component_id: str,
     operating_condition: dict[str, Any] | None = None,
+    config: ScenarioConfig | None = None,
     max_candidates: int = 24,
     top_n: int = 3,
 ) -> RecommendationResponse:
     started = perf_counter()
-    config = _scenario_config(component_type, component_id, operating_condition or {})
+    config = config or scenario_config(component_type, component_id, operating_condition)
     baseline_result = simulate_cascade(
         component_type=component_type,
         component_id=component_id,
-        net_factory=lambda: create_operating_grid(config),
+        config=config,
     )
     baseline = _outcome(baseline_result)
     candidates = generate_candidate_actions(config, max_candidates=max_candidates)
@@ -83,6 +93,7 @@ def recommend_mitigations(
             component_type=component_type,
             component_id=component_id,
             net_factory=lambda action=action: _mitigated_grid(config, action),
+            config=config,
         )
         outcome = _outcome(result)
         improvement = _improvement(baseline, outcome)
@@ -112,6 +123,8 @@ def recommend_mitigations(
     selected = beneficial[:top_n]
 
     return {
+        "scenario_id": scenario_fingerprint(config),
+        "scenario_config": scenario_config_payload(config),
         "baseline": baseline,
         "recommendations": [
             {**item, "rank": index + 1}
@@ -201,7 +214,7 @@ def _generator_redispatch_candidates(config: ScenarioConfig) -> list[MitigationA
 
 
 def _load_shedding_candidates(config: ScenarioConfig) -> list[MitigationAction]:
-    net = create_operating_grid(config)
+    net = build_scenario_network(config)
     actions: list[MitigationAction] = []
     for shed_percent in (2.0, 5.0, 10.0):
         actions.append(
@@ -235,26 +248,31 @@ def _load_shedding_candidates(config: ScenarioConfig) -> list[MitigationAction]:
 
 
 def _mitigated_grid(config: ScenarioConfig, action: MitigationAction):
-    net = create_operating_grid(config)
+    net = build_scenario_network(config)
     apply_mitigation_action(net, action)
     return net
 
 
 def apply_mitigation_action(net: Any, action: MitigationAction) -> None:
     if action.action_type == "generator_redispatch":
+        demand_before = float(net.load["p_mw"].sum())
         increase_id = str(action.parameters["increase_generator_id"])
         decrease_id = str(action.parameters["decrease_generator_id"])
         delta_mw = float(action.parameters["delta_mw"])
         _adjust_generator(net, increase_id, delta_mw)
         _adjust_generator(net, decrease_id, -delta_mw)
+        if abs(float(net.load["p_mw"].sum()) - demand_before) > 1e-9:
+            raise ValueError("Generator redispatch must not change demand")
         return
 
     if action.action_type == "load_shedding":
+        demand_before = float(net.load["p_mw"].sum())
         bus_id = str(action.parameters["bus_id"])
         shed_percent = float(action.parameters["shed_percent"])
         if bus_id == "all":
             net.load.loc[:, "p_mw"] = net.load["p_mw"] * (1.0 - shed_percent / 100.0)
             net.load.loc[:, "q_mvar"] = net.load["q_mvar"] * (1.0 - shed_percent / 100.0)
+            _record_controlled_shed(net, demand_before)
             return
 
         bus_matches = net.bus.index[net.bus["tripwire_id"] == bus_id].tolist()
@@ -264,6 +282,13 @@ def apply_mitigation_action(net: Any, action: MitigationAction) -> None:
         load_rows = net.load.bus == bus_index
         net.load.loc[load_rows, "p_mw"] = net.load.loc[load_rows, "p_mw"] * (1.0 - shed_percent / 100.0)
         net.load.loc[load_rows, "q_mvar"] = net.load.loc[load_rows, "q_mvar"] * (1.0 - shed_percent / 100.0)
+        _record_controlled_shed(net, demand_before)
+
+
+def _record_controlled_shed(net: Any, demand_before: float) -> None:
+    shed_mw = max(demand_before - float(net.load["p_mw"].sum()), 0.0)
+    current = float(net.get("tripwire_controlled_shed_mw", 0.0))
+    net["tripwire_controlled_shed_mw"] = current + shed_mw
 
 
 def _adjust_generator(net: Any, generator_id: str, delta_mw: float) -> None:
@@ -271,22 +296,11 @@ def _adjust_generator(net: Any, generator_id: str, delta_mw: float) -> None:
     if not matches:
         raise GridComponentNotFoundError(f"Unknown generator: {generator_id}")
     generator_index = int(matches[0])
-    net.gen.loc[generator_index, "p_mw"] = float(net.gen.at[generator_index, "p_mw"]) + delta_mw
-
-
-def _scenario_config(
-    component_type: GridComponentType,
-    component_id: str,
-    operating_condition: dict[str, Any],
-) -> ScenarioConfig:
-    return ScenarioConfig(
-        load_multiplier=float(operating_condition.get("load_multiplier", 1.0)),
-        generation_multiplier=float(operating_condition.get("generation_multiplier", 1.0)),
-        line_rating_multiplier=float(operating_condition.get("line_rating_multiplier", 1.0)),
-        dispatch_profile=str(operating_condition.get("dispatch_profile", "balanced")),
-        initial_failure=ScenarioCandidate(component_type, component_id),
-        seed=42,
-    )
+    dispatch = float(net.gen.at[generator_index, "p_mw"]) + delta_mw
+    capacity = float(net.gen.at[generator_index, "max_p_mw"])
+    if dispatch < 0 or dispatch > capacity + 1e-9:
+        raise ValueError(f"Redispatch exceeds limits for {generator_id}")
+    net.gen.loc[generator_index, "p_mw"] = dispatch
 
 
 def _generator_dispatch_targets(config: ScenarioConfig) -> dict[str, float]:
@@ -309,6 +323,11 @@ def _generator_capacity(config: ScenarioConfig, generator_id: str) -> float:
 def _outcome(result: CascadeResponse) -> MitigationOutcome:
     metrics = result["final_metrics"]
     return {
+        "original_demand_mw": metrics["original_demand_mw"],
+        "served_load_mw": metrics["served_load_mw"],
+        "controlled_shed_mw": metrics["controlled_shed_mw"],
+        "involuntary_unserved_mw": metrics["involuntary_unserved_mw"],
+        "total_unserved_mw": metrics["total_unserved_mw"],
         "load_lost_percent": metrics["load_lost_percent"],
         "cascade_depth": metrics["cascade_depth"],
         "failed_lines": metrics["failed_lines"],

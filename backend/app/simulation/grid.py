@@ -40,8 +40,12 @@ class GridLineResponse(TypedDict):
 
 
 class GridMetricsResponse(TypedDict):
+    original_demand_mw: float
     total_demand_mw: float
     served_load_mw: float
+    controlled_shed_mw: float
+    involuntary_unserved_mw: float
+    total_unserved_mw: float
     unserved_load_mw: float
     load_lost_percent: float
     total_generation_mw: float
@@ -286,7 +290,9 @@ def calculate_grid_metrics(
     if lines is None:
         lines = _line_responses(net)
 
-    total_demand = float(net.load["p_mw"].sum()) if not net.load.empty else 0.0
+    current_demand = float(net.load["p_mw"].sum()) if not net.load.empty else 0.0
+    original_demand = float(net.get("tripwire_original_demand_mw", current_demand))
+    controlled_shed = float(net.get("tripwire_controlled_shed_mw", 0.0))
     served_load = _served_load_mw(net, supplied_buses)
     total_generation = _total_generation_mw(net, supplied_buses)
     finite_line_loadings = [
@@ -295,21 +301,51 @@ def calculate_grid_metrics(
         if line["loading_percent"] is not None
     ]
     max_loading = max(finite_line_loadings, default=0.0)
-    unserved_load = max(total_demand - served_load, 0.0)
-    load_lost_percent = 0.0 if total_demand == 0 else (unserved_load / total_demand) * 100
+    involuntary_unserved = max(current_demand - served_load, 0.0)
+    total_unserved = controlled_shed + involuntary_unserved
+    load_lost_percent = (
+        0.0 if original_demand == 0 else (total_unserved / original_demand) * 100
+    )
     failed_lines = sum(1 for line in lines if line["status"] == "failed")
     failed_nodes = sum(1 for node in nodes or [] if node["status"] == "failed")
 
-    return {
-        "total_demand_mw": round(total_demand, 2),
+    metrics: GridMetricsResponse = {
+        "original_demand_mw": round(original_demand, 2),
+        "total_demand_mw": round(original_demand, 2),
         "served_load_mw": round(served_load, 2),
-        "unserved_load_mw": round(unserved_load, 2),
-        "load_lost_percent": round(load_lost_percent, 2),
+        "controlled_shed_mw": round(controlled_shed, 2),
+        "involuntary_unserved_mw": round(involuntary_unserved, 2),
+        "total_unserved_mw": round(total_unserved, 2),
+        "unserved_load_mw": round(total_unserved, 2),
+        "load_lost_percent": round(min(max(load_lost_percent, 0.0), 100.0), 2),
         "total_generation_mw": round(total_generation, 2),
         "failed_components": failed_lines + failed_nodes,
         "failed_lines": failed_lines,
         "max_line_loading_percent": round(max_loading, 2),
     }
+    _validate_load_accounting(metrics)
+    return metrics
+
+
+def _validate_load_accounting(metrics: GridMetricsResponse) -> None:
+    numeric_values = (
+        metrics["original_demand_mw"],
+        metrics["served_load_mw"],
+        metrics["controlled_shed_mw"],
+        metrics["involuntary_unserved_mw"],
+        metrics["total_unserved_mw"],
+        metrics["load_lost_percent"],
+    )
+    if not all(isfinite(value) and value >= 0 for value in numeric_values):
+        raise ValueError("Grid load accounting produced an invalid value")
+
+    accounted = (
+        metrics["served_load_mw"]
+        + metrics["controlled_shed_mw"]
+        + metrics["involuntary_unserved_mw"]
+    )
+    if abs(accounted - metrics["original_demand_mw"]) > 0.05:
+        raise ValueError("Grid load accounting does not balance to original demand")
 
 
 def find_supplied_buses(net: pp.pandapowerNet) -> set[int]:

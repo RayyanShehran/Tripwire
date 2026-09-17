@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import random
 import subprocess
@@ -29,6 +28,15 @@ from app.simulation.grid import (
     run_power_flow,
     serialize_grid_state,
 )
+from app.simulation.config import (
+    DISPATCH_FACTORS,
+    ScenarioCandidate,
+    ScenarioConfig,
+    available_generation_capacity_mw as scenario_generation_capacity_mw,
+    build_scenario_network,
+    scenario_config_payload,
+    scenario_fingerprint,
+)
 
 DEFAULT_LOAD_MULTIPLIERS = (1.0, 1.15, 1.25, 1.35, 1.5)
 DEFAULT_GENERATION_MULTIPLIERS = (0.8, 0.9, 1.0, 1.1)
@@ -37,17 +45,6 @@ DEFAULT_DISPATCH_PROFILES = ("balanced", "south_heavy", "harbor_heavy", "south_r
 DEFAULT_RANDOM_SEED = 42
 DATASET_SCHEMA_VERSION = "2.0"
 GRID_VERSION = "tripwire-8bus-230kv-v1"
-SLACK_CAPACITY_MW = 500.0
-GENERATOR_CAPACITY_MW = {
-    "gen-south": 180.0,
-    "gen-harbor": 120.0,
-}
-DISPATCH_FACTORS = {
-    "balanced": {"gen-south": 1.0, "gen-harbor": 1.0},
-    "south_heavy": {"gen-south": 1.15, "gen-harbor": 0.85},
-    "harbor_heavy": {"gen-south": 0.85, "gen-harbor": 1.15},
-    "south_reduced": {"gen-south": 0.75, "gen-harbor": 1.05},
-}
 
 SeverityLabel = Literal["LOW", "MODERATE", "HIGH", "CRITICAL"]
 
@@ -118,22 +115,6 @@ NON_NEGATIVE_NUMERIC_COLUMNS = [
     for column in DATASET_COLUMNS
     if column not in {"reserve_margin_mw", "reserve_margin_percent"}
 ]
-
-
-@dataclass(frozen=True)
-class ScenarioCandidate:
-    component_type: GridComponentType
-    component_id: str
-
-
-@dataclass(frozen=True)
-class ScenarioConfig:
-    load_multiplier: float
-    generation_multiplier: float
-    line_rating_multiplier: float
-    dispatch_profile: str
-    initial_failure: ScenarioCandidate
-    seed: int
 
 
 @dataclass(frozen=True)
@@ -525,19 +506,11 @@ def run_cli(argv: list[str] | None = None) -> int:
 
 
 def create_operating_grid(config: ScenarioConfig) -> Any:
-    net = create_test_grid()
-    _apply_load_multiplier(net, config.load_multiplier)
-    _apply_generation_profile(net, config.generation_multiplier, config.dispatch_profile)
-    _apply_line_rating_multiplier(net, config.line_rating_multiplier)
-    return net
+    return build_scenario_network(config)
 
 
 def available_generation_capacity_mw(config: ScenarioConfig) -> float:
-    factors = DISPATCH_FACTORS[config.dispatch_profile]
-    total = SLACK_CAPACITY_MW * config.generation_multiplier
-    for generator_id, base_capacity in GENERATOR_CAPACITY_MW.items():
-        total += base_capacity * config.generation_multiplier * factors[generator_id]
-    return _round(total)
+    return _round(scenario_generation_capacity_mw(config))
 
 
 def build_feature_row(config: ScenarioConfig, scenario_id: str = "prediction") -> dict[str, Any]:
@@ -814,26 +787,6 @@ def _failure_candidates(component_types: tuple[GridComponentType, ...]) -> list[
     return candidates
 
 
-def _apply_load_multiplier(net: Any, load_multiplier: float) -> None:
-    net.load.loc[:, "p_mw"] = net.load["p_mw"] * load_multiplier
-    net.load.loc[:, "q_mvar"] = net.load["q_mvar"] * load_multiplier
-
-
-def _apply_generation_profile(net: Any, generation_multiplier: float, dispatch_profile: str) -> None:
-    factors = DISPATCH_FACTORS[dispatch_profile]
-    net.ext_grid.loc[:, "max_p_mw"] = SLACK_CAPACITY_MW * generation_multiplier
-
-    for generator_index, generator in net.gen.iterrows():
-        generator_id = str(generator["tripwire_id"])
-        factor = generation_multiplier * factors[generator_id]
-        net.gen.loc[generator_index, "p_mw"] = float(generator["p_mw"]) * factor
-        net.gen.loc[generator_index, "max_p_mw"] = GENERATOR_CAPACITY_MW[generator_id] * factor
-
-
-def _apply_line_rating_multiplier(net: Any, line_rating_multiplier: float) -> None:
-    net.line.loc[:, "max_i_ka"] = net.line["max_i_ka"] * line_rating_multiplier
-
-
 def _bus_voltage(pre_failure_grid: dict[str, Any], bus_id: str) -> float:
     bus = next(node for node in pre_failure_grid["nodes"] if node["id"] == bus_id)
     return bus["voltage"] or 0.0
@@ -868,21 +821,19 @@ def _generator_dispatch(pre_failure_grid: dict[str, Any]) -> dict[str, float]:
 
 
 def _scenario_id(config: ScenarioConfig) -> str:
-    digest_source = json.dumps(_metadata_config(config), sort_keys=True)
-    digest = hashlib.sha1(digest_source.encode("utf-8")).hexdigest()[:12]
-    failure = config.initial_failure
-    return f"tw-{config.seed}-{failure.component_type}-{failure.component_id}-{digest}"
+    return scenario_fingerprint(config)
 
 
 def _metadata_config(config: ScenarioConfig) -> dict[str, Any]:
+    payload = scenario_config_payload(config)
     return {
-        "component_type": config.initial_failure.component_type,
-        "component_id": config.initial_failure.component_id,
-        "load_multiplier": _round(config.load_multiplier),
-        "generation_multiplier": _round(config.generation_multiplier),
-        "line_rating_multiplier": _round(config.line_rating_multiplier),
-        "dispatch_profile": config.dispatch_profile,
-        "seed": config.seed,
+        "component_type": payload["initial_component_type"],
+        "component_id": payload["initial_component_id"],
+        "load_multiplier": payload["load_multiplier"],
+        "generation_multiplier": payload["generation_multiplier"],
+        "line_rating_multiplier": payload["line_rating_multiplier"],
+        "dispatch_profile": payload["dispatch_profile"],
+        "seed": payload["seed"],
     }
 
 

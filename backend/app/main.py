@@ -9,13 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.config import get_settings, validate_settings
-from app.ml.dataset import ScenarioCandidate, ScenarioConfig, create_operating_grid
 from app.ml.inference import (
     ModelNotTrainedError,
     PredictionInputError,
     load_model_bundle,
-    predict_from_scenario,
+    predict_from_config,
 )
+from app.simulation.config import ScenarioConfig, scenario_config
 from app.simulation.cascade import DEFAULT_MAX_CASCADE_STEPS, simulate_cascade
 from app.simulation.grid import (
     GridComponentNotFoundError,
@@ -75,17 +75,19 @@ class OperatingCondition(BaseModel):
     dispatch_profile: str = Field(default="balanced", min_length=1)
 
 
-class CascadeRequest(FailureRequest):
+class ScenarioRequest(FailureRequest):
+    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
+
+
+class CascadeRequest(ScenarioRequest):
     max_steps: int = Field(default=DEFAULT_MAX_CASCADE_STEPS, ge=0, le=100)
-    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
 
 
-class PredictionRequest(FailureRequest):
-    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
+class PredictionRequest(ScenarioRequest):
+    pass
 
 
-class RecommendationRequest(FailureRequest):
-    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
+class RecommendationRequest(ScenarioRequest):
     max_candidates: int = Field(default=24, ge=1, le=30)
     top_n: int = Field(default=3, ge=1, le=5)
 
@@ -145,7 +147,7 @@ def get_demo_presets() -> dict:
 
 
 @app.post("/api/failure")
-def simulate_failure(request: FailureRequest) -> dict:
+def simulate_failure(request: ScenarioRequest) -> dict:
     logger.info(
         "single failure requested component_type=%s component_id=%s",
         request.component_type,
@@ -154,7 +156,8 @@ def simulate_failure(request: FailureRequest) -> dict:
     start = perf_counter()
     try:
         return simulate_single_failure(
-            ComponentFailure(request.component_type, request.component_id)
+            ComponentFailure(request.component_type, request.component_id),
+            config=_scenario_config_from_request(request),
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -187,21 +190,13 @@ def run_cascade(request: CascadeRequest) -> dict:
         request.operating_condition.model_dump(),
     )
     start = perf_counter()
-    condition = request.operating_condition
-    config = ScenarioConfig(
-        load_multiplier=condition.load_multiplier,
-        generation_multiplier=condition.generation_multiplier,
-        line_rating_multiplier=condition.line_rating_multiplier,
-        dispatch_profile=condition.dispatch_profile,
-        initial_failure=ScenarioCandidate(request.component_type, request.component_id),
-        seed=42,
-    )
+    config = _scenario_config_from_request(request)
     try:
         return simulate_cascade(
             component_type=request.component_type,
             component_id=request.component_id,
             max_steps=request.max_steps,
-            net_factory=lambda: create_operating_grid(config),
+            config=config,
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -220,15 +215,10 @@ def predict_risk(request: PredictionRequest) -> dict:
         request.operating_condition.model_dump(),
     )
     start = perf_counter()
-    condition = request.operating_condition
+    config = _scenario_config_from_request(request)
     try:
-        return predict_from_scenario(
-            component_type=request.component_type,
-            component_id=request.component_id,
-            load_multiplier=condition.load_multiplier,
-            generation_multiplier=condition.generation_multiplier,
-            line_rating_multiplier=condition.line_rating_multiplier,
-            dispatch_profile=condition.dispatch_profile,
+        return predict_from_config(
+            config,
             model_dir=settings.model_path,
         )
     except GridComponentNotFoundError as exc:
@@ -252,11 +242,12 @@ def recommend_actions(request: RecommendationRequest) -> dict:
         request.operating_condition.model_dump(),
     )
     start = perf_counter()
+    config = _scenario_config_from_request(request)
     try:
         return recommend_mitigations(
             component_type=request.component_type,
             component_id=request.component_id,
-            operating_condition=request.operating_condition.model_dump(),
+            config=config,
             max_candidates=request.max_candidates,
             top_n=request.top_n,
         )
@@ -270,3 +261,11 @@ def recommend_actions(request: RecommendationRequest) -> dict:
 
 def _elapsed_ms(start: float) -> float:
     return (perf_counter() - start) * 1000
+
+
+def _scenario_config_from_request(request: ScenarioRequest) -> ScenarioConfig:
+    return scenario_config(
+        request.component_type,
+        request.component_id,
+        request.operating_condition.model_dump(),
+    )

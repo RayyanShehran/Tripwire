@@ -4,7 +4,8 @@ from typing import Any
 
 import pandas as pd
 
-from app.ml.dataset import FEATURE_COLUMNS, ScenarioCandidate, ScenarioConfig, build_feature_row
+from app.ml.dataset import FEATURE_COLUMNS, build_feature_row
+from app.simulation.config import ScenarioCandidate, ScenarioConfig
 from app.simulation.grid import GridComponentNotFoundError, GridComponentType
 
 CATEGORICAL_FEATURES = [

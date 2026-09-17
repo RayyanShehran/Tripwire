@@ -19,6 +19,8 @@ RISK_THRESHOLDS = {
 
 
 class PredictionResult(TypedDict):
+    scenario_id: str
+    scenario_config: dict[str, object]
     cascade_probability: float
     predicted_load_lost_percent: float
     risk_level: RiskLevel
