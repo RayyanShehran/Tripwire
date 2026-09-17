@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@xyflow/react": "^12.3.6",
+    "geist": "^1.7.2",
+    "lucide-react": "^1.46.0",
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

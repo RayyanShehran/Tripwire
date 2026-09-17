@@ -3,35 +3,55 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
-  --tw-bg: #070b13;
-  --tw-surface: #0d1422;
-  --tw-surface-raised: #111a2b;
-  --tw-border: #253044;
-  --tw-text: #e6edf7;
-  --tw-muted: #94a3b8;
-  --tw-accent: #67e8f9;
-  --tw-healthy: #34d399;
-  --tw-warning: #fbbf24;
-  --tw-danger: #f87171;
+  color-scheme: light;
+  --color-canvas: #f5f5f5;
+  --color-paper: #ffffff;
+  --color-surface-alt: #fafafa;
+  --color-ink: #0a0a0a;
+  --color-ink-soft: #171717;
+  --color-mid-gray: #737373;
+  --color-hairline: #e5e5e5;
+  --color-ember: #e7000b;
+  --radius-card: 8px;
+  --radius-control: 18px;
+  --radius-small: 6px;
+  --shadow-card: 0 0 0 1px rgba(23,23,23,.05), 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1);
 }
-
-body {
-  margin: 0;
-  background: var(--tw-bg);
-  color: var(--tw-text);
-  font-family: Inter, Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-.react-flow__node {
-  font-family: inherit;
-}
-
-.react-flow__node.selected > div {
-  box-shadow: 0 0 0 2px rgba(103, 232, 249, 0.7), 0 0 24px rgba(103, 232, 249, 0.12);
-}
-
-.react-flow__attribution {
-  background: rgba(15, 23, 42, 0.85) !important;
-  color: #94a3b8 !important;
-}
+* { box-sizing: border-box; letter-spacing: 0; }
+body { margin: 0; background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-geist-sans), 'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 3px; }
+button svg { width: 16px; height: 16px; flex-shrink: 0; }
+h1, h2, h3, p { margin: 0; }
+h2 { font-size: 18px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+.eyebrow { font-size: 12px; text-transform: uppercase; font-weight: 500; color: var(--color-mid-gray); }
+.muted { color: var(--color-mid-gray); }
+.danger { color: var(--color-ember); }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 8px 14px; border: 1px solid var(--color-hairline); border-radius: var(--radius-control); font-size: 14px; font-weight: 500; line-height: 20px; transition: background .15s; }
+.button-primary { background: var(--color-ink); color: var(--color-paper); border-color: var(--color-ink); }
+.button-primary:hover:not(:disabled) { background: var(--color-ink-soft); }
+.button-secondary { background: var(--color-canvas); color: var(--color-ink); }
+.button-ghost, .button-danger { background: transparent; color: var(--color-ink); }
+.button-danger { color: var(--color-ember); }
+.button:not(.button-primary):hover:not(:disabled) { background: var(--color-hairline); }
+.icon-button { width: 36px; height: 36px; min-width: 36px; padding: 0; }
+.badge { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--color-hairline); border-radius: var(--radius-control); padding: 3px 8px; font-size: 11px; font-weight: 500; text-transform: uppercase; background: var(--color-canvas); }
+.badge svg { width: 12px; height: 12px; }
+.status-stressed { border-style: dashed; border-color: var(--color-ink-soft); }
+.status-overloaded { border: 2px solid var(--color-ink); background: var(--color-paper); }
+.status-failed, .status-blackout { color: var(--color-ember); border-color: var(--color-ember); }
+.status-unsupplied { opacity: .6; border-style: dotted; }
+.section-panel { padding: 18px 0; border-bottom: 1px solid var(--color-hairline); }
+.section-panel > header { margin-bottom: 14px; }
+.metric { min-width: 0; padding: 14px 0; }
+.metric-value { display: block; margin-top: 5px; font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.progress-track { height: 7px; background: var(--color-hairline); overflow: hidden; border-radius: var(--radius-control); }
+.progress-fill { height: 100%; background: var(--color-ink); }
+.react-flow__node { font-family: inherit; }
+.react-flow__attribution { background: var(--color-paper) !important; color: var(--color-mid-gray) !important; }
+.react-flow__controls { box-shadow: var(--shadow-card) !important; }
+.react-flow__controls-button { background: var(--color-paper) !important; color: var(--color-ink) !important; border-color: var(--color-hairline) !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
