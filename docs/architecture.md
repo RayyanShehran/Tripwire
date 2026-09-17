@@ -53,6 +53,7 @@ Core backend packages:
 Grid logic lives under `backend/app/simulation/` instead of inside API route handlers.
 
 - `grid.py` creates the sample grid, runs pandapower, applies component outages, detects supplied buses, assigns component status, and serializes API-safe JSON.
+- `config.py` defines the authoritative immutable `ScenarioConfig`, deterministic scenario fingerprint, operating-condition validation, and shared scenario-network builder.
 - `cascade.py` runs deterministic cascading-failure simulations from one initial component failure.
 - `demo.py` defines deterministic simulator-backed presentation presets.
 - `scenario.py` builds stateless single-failure scenarios from a fresh baseline and wraps solved or blackout results with scenario metadata.
@@ -176,6 +177,10 @@ POST /api/recommend -> baseline simulation + bounded intervention simulations
 ```
 
 No endpoint inherits outages from a previous request. This keeps repeated tests deterministic and avoids hidden process-level scenario state.
+
+Prediction, single failure, cascade, and recommendation requests are normalized into the same `ScenarioConfig`. The configuration contains the operating multipliers, dispatch profile, initial component failure, optional preset identifier, and seed. Every scenario network is created by `build_scenario_network(config)`, and responses expose a deterministic `scenario_id` that excludes the mitigation action. Baseline and mitigation candidates therefore differ only by the intervention.
+
+The frontend keeps the original unmitigated cascade and the replayed mitigated cascade in separate state. Changing the selected component, preset, or operating profile invalidates dependent prediction, failure, cascade, and mitigation results. Reset clears all scenario state and returns the profile and grid to baseline.
 
 ## Architecture Diagram
 
@@ -482,6 +487,8 @@ load_shedding
 ```
 
 Generator redispatch shifts 5% or 10% output between `gen-south` and `gen-harbor` and rejects actions that would exceed configured available capacity or create negative generation. Controlled load shedding sheds 2%, 5%, or 10% at individual load buses or across all load buses and rejects percentages above the configured limit.
+
+Redispatch preserves demand. Controlled shedding does not disappear from the loss calculation: the network retains original demand and reports controlled shed, involuntary unserved load, total unserved load, served load, and load-lost percentage separately. Load-loss improvement is expressed as percentage-point reduction.
 
 Per request flow:
 

@@ -194,11 +194,16 @@ POST /api/recommend
 Scenario endpoints do not share hidden simulation state:
 
 - `GET /api/grid` always returns the healthy solved baseline.
-- `POST /api/failure` starts from a fresh baseline, applies one requested outage, and returns that solved or blackout scenario.
-- `POST /api/cascade` starts from a fresh baseline, applies one requested initial outage, and then trips overloaded lines step by step.
+- `POST /api/failure`, `/api/cascade`, `/api/predict`, and `/api/recommend` use the same operating-condition fields and deterministic scenario fingerprint.
+- `POST /api/failure` starts from the requested operating condition, applies one requested outage, and returns that solved or blackout scenario.
+- `POST /api/cascade` starts from the same requested operating condition, applies one requested initial outage, and then trips overloaded lines step by step.
 - `POST /api/reset` and `GET /api/reset` return the healthy baseline.
 
 Outages do not carry over into later requests.
+
+`backend/app/simulation/config.py` is the authoritative scenario definition. Its immutable `ScenarioConfig` contains the load, generation, dispatch, line-rating, initial-failure, preset, and seed inputs. Prediction, failure, cascade, dataset generation, and mitigation all build networks through the same helper. API responses include `scenario_id` and `scenario_config` so clients can verify that results belong to the same case.
+
+The frontend Reset Scenario action uses full-reset semantics: it clears selection, prediction, failure, original cascade, mitigation recommendations, selected mitigation, and mitigated cascade, then returns the operating profile and rendered grid to baseline.
 
 Failure request body:
 
@@ -341,6 +346,19 @@ Invoke-RestMethod http://127.0.0.1:8000/api/recommend `
 ```
 
 The endpoint returns the no-mitigation baseline, top beneficial recommendations, simulated before/after outcomes, score, candidate counts, runtime, and a cascade result that the frontend can replay.
+
+Controlled shedding remains part of customer load not served. Mitigation metrics distinguish:
+
+```text
+original_demand_mw
+served_load_mw
+controlled_shed_mw
+involuntary_unserved_mw
+total_unserved_mw
+load_lost_percent
+```
+
+The accounting invariant is `served + controlled shed + involuntary unserved = original demand`. For example, shedding 25 MW from an otherwise supplied 500 MW scenario reports 475 MW served, 25 MW total unserved, and 5% load lost. A reduction from 100% to 5% is reported as 95 percentage points.
 
 Concise request/response examples are also available in `docs/api-examples.md`.
 
