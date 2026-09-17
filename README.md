@@ -193,7 +193,7 @@ POST /api/recommend
 
 Scenario endpoints do not share hidden simulation state:
 
-- `GET /api/grid` always returns the healthy solved baseline.
+- `GET /api/grid` returns the healthy solved baseline by default; operating-condition query parameters return the matching pre-failure grid.
 - `POST /api/failure`, `/api/cascade`, `/api/predict`, and `/api/recommend` use the same operating-condition fields and deterministic scenario fingerprint.
 - `POST /api/failure` starts from the requested operating condition, applies one requested outage, and returns that solved or blackout scenario.
 - `POST /api/cascade` starts from the same requested operating condition, applies one requested initial outage, and then trips overloaded lines step by step.
@@ -469,6 +469,7 @@ Frontend:
 
 ```powershell
 pnpm lint
+pnpm test
 pnpm build
 ```
 

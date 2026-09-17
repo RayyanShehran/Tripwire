@@ -182,6 +182,8 @@ Prediction, single failure, cascade, and recommendation requests are normalized 
 
 The frontend keeps the original unmitigated cascade and the replayed mitigated cascade in separate state. Changing the selected component, preset, or operating profile invalidates dependent prediction, failure, cascade, and mitigation results. Reset clears all scenario state and returns the profile and grid to baseline.
 
+`frontend/components/grid/scenario-state.ts` owns these transitions in a single reducer. A revision number rejects late responses after a configuration change or reset, and scenario fingerprints prevent mismatched comparison results. Grid previews use operating-condition query parameters on `GET /api/grid`. `pnpm test` covers replay immutability, profile/component invalidation, reset, and late responses.
+
 ## Architecture Diagram
 
 ```mermaid

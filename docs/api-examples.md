@@ -64,7 +64,7 @@ Response shape:
 Invoke-RestMethod http://127.0.0.1:8000/api/failure `
   -Method Post `
   -ContentType "application/json" `
-  -Body '{"component_type":"line","component_id":"line-101"}'
+  -Body '{"component_type":"line","component_id":"line-101","operating_condition":{"load_multiplier":1.25,"generation_multiplier":1.0,"line_rating_multiplier":0.35,"dispatch_profile":"balanced"}}'
 ```
 
 Response shape:
@@ -116,9 +116,23 @@ Response shape:
   "recommendations": [
     {
       "description": "Shed 5% total load",
-      "predicted_or_simulated_outcome": {"load_lost_percent": 0.0}
+      "predicted_or_simulated_outcome": {
+        "original_demand_mw": 500.0,
+        "served_load_mw": 475.0,
+        "controlled_shed_mw": 25.0,
+        "involuntary_unserved_mw": 0.0,
+        "total_unserved_mw": 25.0,
+        "load_lost_percent": 5.0
+      },
+      "improvement": {
+        "load_loss_before_percent": 100.0,
+        "load_loss_after_percent": 5.0,
+        "load_loss_reduction_percentage_points": 95.0
+      }
     }
   ],
   "summary": "Recommended based on Tripwire simulation."
 }
 ```
+
+Every scenario response also includes `scenario_id` and `scenario_config`. Send the same operating condition and initial component to all four POST endpoints. Recommendation responses preserve `baseline_cascade_result` separately from each candidate's `cascade_result`. The legacy `unserved_load_mw` field equals `total_unserved_mw` and includes controlled shedding.
