@@ -21,6 +21,7 @@ export type GridLineData = {
   capacityMw: number | null;
   status: GridStatus;
   isCurrentlyOverloaded?: boolean;
+  routeSide?: "left" | "right";
   isUnsupplied?: boolean;
   isNewlyFailed?: boolean;
 };

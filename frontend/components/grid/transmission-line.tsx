@@ -4,7 +4,13 @@ import { TriangleAlert } from "lucide-react";
 import { statusStyles } from "./status";
 import type { GridLineData } from "./types";
 export function TransmissionLine({ id, sourceX, sourceY, targetX, targetY, data, selected }: EdgeProps & { data?: GridLineData }) {
-  const [path, x, y] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+  let [path, x, y] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+  const corridor = sourceX + (data?.routeSide === "left" ? -42 : 42);
+  if (data?.routeSide) {
+    path = `M ${sourceX} ${sourceY} H ${corridor} V ${targetY} H ${targetX}`;
+    x = corridor;
+    y = (sourceY + targetY) / 2;
+  }
   const status = data?.status ?? "Healthy";
   const style = statusStyles[status];
   const connection = id.startsWith("connection-");

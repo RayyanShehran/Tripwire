@@ -44,6 +44,14 @@ export function toFlowData(grid: ApiGridResponse, step?: ApiCascadeStep, failedI
     const b = positions.get(edge.target)!;
     const dx = b.x - a.x, dy = b.y - a.y;
     const horizontal = Math.abs(dx) >= Math.abs(dy);
+    // Long vertical ties bypass intermediate bus symbols rather than crossing them.
+    if (Math.abs(dx) < 10 && Math.abs(dy) > 300 && !edge.id.startsWith("connection-")) {
+      const side = edge.source === "bus-2" ? "left" : "right";
+      edge.sourceHandle = `source-${side}`;
+      edge.targetHandle = `target-${side}`;
+      if (edge.data) edge.data.routeSide = side;
+      continue;
+    }
     edge.sourceHandle = `source-${horizontal ? dx >= 0 ? "right" : "left" : dy >= 0 ? "bottom" : "top"}`;
     edge.targetHandle = `target-${horizontal ? dx >= 0 ? "left" : "right" : dy >= 0 ? "top" : "bottom"}`;
   }

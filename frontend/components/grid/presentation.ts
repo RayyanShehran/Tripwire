@@ -1,5 +1,9 @@
 import type { ApiCascadeResponse, ApiGridResponse } from "./api";
 export type SystemState = "Healthy" | "Stressed" | "Cascade" | "Blackout" | "Unknown";
+export function playbackState(totalSteps: number, index: number, playing: boolean) {
+  const atEnd = index >= totalSteps - 1;
+  return { atEnd, canPlay: totalSteps > 1, label: playing ? "Pause" : atEnd ? "Replay" : "Play" };
+}
 export function systemState(grid: ApiGridResponse | null, cascade: ApiCascadeResponse | null, stepIndex: number, running: boolean): SystemState {
   if (!grid) return "Unknown";
   // The header describes the displayed step, not a future final result.

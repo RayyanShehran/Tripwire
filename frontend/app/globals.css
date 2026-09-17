@@ -106,7 +106,27 @@ select { appearance: none; width: 100%; border: 1px solid var(--color-hairline);
 .view-label { display: inline-block; border-left: 1px solid var(--color-hairline); padding-left: 8px; margin-left: 8px; }
 .network-tools { display: flex; gap: 3px; flex-shrink: 0; }
 .network-tools .button { border-color: transparent; }
-.network-canvas { height: max(540px, calc(100vh - 250px)); position: relative; }
+.network-canvas { height: max(600px, calc(100vh - 250px)); position: relative; }
+.cascade-timeline { padding: 22px 0; }
+.timeline-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.timeline-header h2 { font-size: 16px; }
+.timeline-header p { font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.playback-controls { display: flex; align-items: center; gap: 6px; }
+.playback-controls > .button-primary { min-width: 96px; }
+.speed-control { display: flex; align-items: center; gap: 7px; margin-left: 6px; }
+.speed-control select { min-height: 36px; padding: 7px 10px; min-width: 58px; font-size: 12px; }
+.speed-control .eyebrow { font-size: 10px; }
+.timeline-steps { display: flex; list-style: none; padding: 0 0 8px; margin: 18px 0 0; overflow-x: auto; gap: 0; }
+.timeline-steps li { flex: 1 0 185px; border-top: 1px solid var(--color-hairline); padding-top: 12px; }
+.timeline-steps button { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; border: 0; background: none; padding: 8px; border-radius: var(--radius-small); }
+.timeline-steps button:hover { background: var(--color-hairline); }
+.timeline-steps button[aria-current] { background: var(--color-paper); outline: 1px solid var(--color-ink); outline-offset: -1px; }
+.step-number { display: grid; place-items: center; flex-shrink: 0; width: 26px; height: 26px; border: 1px solid var(--color-mid-gray); border-radius: 50%; font-size: 12px; }
+.step-number.step-blackout { border-color: var(--color-ember); color: var(--color-ember); }
+.timeline-steps strong { display: block; font-size: 12px; font-weight: 500; }
+.timeline-steps small { display: block; font-size: 10px; color: var(--color-mid-gray); margin-top: 5px; }
+.timeline-outcome { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding-top: 10px; font-size: 12px; color: var(--color-mid-gray); }
+.timeline-outcome .eyebrow { font-size: 10px; }
 .network-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: center; min-height: 42px; padding: 10px 16px; border-top: 1px solid var(--color-hairline); color: var(--color-mid-gray); font-size: 11px; }
 .network-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-line { display: inline-block; width: 20px; border-top: 1px solid var(--color-mid-gray); }
