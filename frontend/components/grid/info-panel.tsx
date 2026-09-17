@@ -344,10 +344,10 @@ function CascadeComparisonPanel({
   }
 
   const loadLossReduction = mitigated
-    ? Math.max(original.loadLostPercent - mitigated.loadLostPercent, 0)
+    ? original.loadLostPercent - mitigated.loadLostPercent
     : null;
   const failedLinesPrevented = mitigated
-    ? Math.max(original.failedLines - mitigated.failedLines, 0)
+    ? original.failedLines - mitigated.failedLines
     : null;
 
   return (
@@ -405,7 +405,7 @@ function HelpPanel() {
         />
         <HelpTerm
           term="Unserved load"
-          definition="Customer demand disconnected by outages or islanding."
+          definition="Original customer demand not served, including controlled shedding and outages."
         />
         <HelpTerm
           term="Cascade depth"

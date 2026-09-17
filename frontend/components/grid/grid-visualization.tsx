@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import {
   Background,
   Controls,
@@ -11,7 +11,6 @@ import {
   useNodesState,
   type Edge,
   type Node,
-  type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -22,7 +21,6 @@ import {
   fetchDemoPresets,
   findMitigations,
   predictRisk,
-  resetScenario,
   runCascade,
   simulateFailure,
   toLineData,
@@ -31,13 +29,13 @@ import {
   type ApiCascadeStep,
   type ApiComponentType,
   type ApiDemoPreset,
-  type ApiFailureResponse,
   type ApiGridResponse,
   type ApiMitigationRecommendation,
   type ApiMitigationResponse,
   type ApiOperatingCondition,
   type ApiPredictionResponse,
 } from "./api";
+import { initialScenario, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
 import { statusStyles } from "./status";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
@@ -73,36 +71,45 @@ function isGridLine(edge: Edge): edge is GridLine {
 
 export function GridVisualization() {
   const apiBaseUrl = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
-  const [grid, setGrid] = useState<ApiGridResponse | null>(null);
-  const [originalCascadeResult, setOriginalCascadeResult] = useState<ApiCascadeResponse | null>(null);
-  const [mitigatedCascadeResult, setMitigatedCascadeResult] = useState<ApiCascadeResponse | null>(null);
-  const cascadeResult = mitigatedCascadeResult ?? originalCascadeResult;
-  const [, setFailureResult] = useState<ApiFailureResponse | null>(null);
+  const [scenario, dispatch] = useReducer(scenarioReducer, undefined, initialScenario);
+  const { originalCascadeResult, mitigatedCascadeResult } = scenario;
+  const operatingProfile = scenario.input.profile;
+  const selectedPresetId = scenario.input.presetId;
+  const cascadeResult = scenario.view === "mitigated"
+    ? mitigatedCascadeResult : scenario.view === "original" ? originalCascadeResult : null;
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const flowData = useMemo(() => (grid ? toFlowData(grid) : { nodes: [], edges: [] }), [grid]);
+  const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
+  const grid = currentCascadeStep?.grid
+    ?? (scenario.view === "failure" ? scenario.failure?.grid : null)
+    ?? scenario.baseline;
+  const isLoading = !grid && !errorMessage;
+  const flowData = useMemo(() => grid ? toFlowData(grid, currentCascadeStep ?? undefined) : { nodes: [], edges: [] }, [grid, currentCascadeStep]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
-  const [selected, setSelected] = useState<SelectedGridElement>(null);
-  const selectedRef = useRef<SelectedGridElement>(null);
-  const [operatingProfile, setOperatingProfile] = useState<OperatingProfileKey>("baseline");
-  const [prediction, setPrediction] = useState<RiskPrediction | null>(null);
-  const [mitigation, setMitigation] = useState<MitigationResult | null>(null);
-  const [selectedMitigation, setSelectedMitigation] = useState<MitigationRecommendation | null>(null);
-  const [recommendationCascades, setRecommendationCascades] = useState(
-    new Map<number, ApiCascadeResponse>(),
-  );
-  const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
-
-  useEffect(() => {
-    selectedRef.current = selected;
-  }, [selected]);
+  const selected = useMemo<SelectedGridElement>(() => {
+    const component = scenario.input.component;
+    if (!component) return null;
+    if (component.component_type === "line") {
+      const item = flowData.edges.find((edge) => edge.id === component.component_id);
+      return item ? { kind: "line", item } : null;
+    }
+    const item = flowData.nodes.find((node) => node.id === component.component_id);
+    return item ? { kind: "node", item } : null;
+  }, [scenario.input.component, flowData]);
+  const prediction = useMemo(() => scenario.prediction ? {
+    ...toRiskPrediction(scenario.prediction),
+    ...(originalCascadeResult ? {
+      actualCascadeOccurred: originalCascadeResult.cascade_depth > 0,
+      actualLoadLostPercent: originalCascadeResult.final_metrics.load_lost_percent,
+    } : {}),
+  } : null, [scenario.prediction, originalCascadeResult]);
+  const mitigation = scenario.recommendations ? toMitigationResult(scenario.recommendations) : null;
+  const selectedMitigation = mitigation?.recommendations.find((item) => item.rank === scenario.selectedMitigationRank) ?? null;
 
   const dashboardMetrics = useMemo(() => {
     if (currentCascadeStep) {
@@ -170,338 +177,110 @@ export function GridVisualization() {
     return [{ label: "System Status", value: "Loading" }];
   }, [cascadeResult?.cascade_depth, currentCascadeStep, grid, prediction]);
 
-  const applyGridResponse = useCallback(
-    (
-      response: ApiGridResponse,
-      step?: ApiCascadeStep,
-      preserveSelection?: SelectedGridElement,
-    ) => {
-      const nextFlowData = toFlowData(response, step);
-
-      setGrid(response);
-      setNodes(nextFlowData.nodes);
-      setEdges(nextFlowData.edges);
-      setSelected(
-        preserveSelection
-          ? findMatchingSelection(preserveSelection, nextFlowData)
-          : null,
-      );
-    },
-    [setEdges, setNodes],
-  );
-
-  const clearScenarioResults = useCallback(() => {
-    setFailureResult(null);
-    setPrediction(null);
-    setOriginalCascadeResult(null);
-    setMitigatedCascadeResult(null);
-    setMitigation(null);
-    setSelectedMitigation(null);
-    setRecommendationCascades(new Map());
-    setSelectedPresetId(null);
-    setCurrentStepIndex(0);
-    setIsPlaying(false);
-  }, []);
 
   useEffect(() => {
-    let isMounted = true;
-    async function loadGrid() {
-      try {
-        setIsLoading(true);
-        setErrorMessage(null);
-        const [response, presets] = await Promise.all([
-          fetchGrid(apiBaseUrl),
-          fetchDemoPresets(apiBaseUrl),
-        ]);
-
-        if (!isMounted) {
-          return;
-        }
-
-        applyGridResponse(response);
-        setDemoPresets(presets);
-      } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-
-        setGrid(null);
-        setNodes([]);
-        setEdges([]);
-        setErrorMessage(
-          error instanceof Error ? error.message : "Unable to load grid data",
-        );
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadGrid();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [apiBaseUrl, applyGridResponse, setEdges, setNodes]);
+    setNodes(flowData.nodes.map((node) => ({ ...node, selected: node.id === scenario.input.component?.component_id })));
+    setEdges(flowData.edges.map((edge) => ({ ...edge, selected: edge.id === scenario.input.component?.component_id })));
+  }, [flowData, scenario.input.component, setNodes, setEdges]);
 
   useEffect(() => {
-    if (!cascadeResult) {
-      return;
-    }
-
-    const step = cascadeResult.steps[currentStepIndex];
-    if (step) {
-      applyGridResponse(step.grid, step, selectedRef.current);
-    }
-  }, [applyGridResponse, cascadeResult, currentStepIndex]);
+    let active = true;
+    fetchDemoPresets(apiBaseUrl).then((presets) => {
+      if (active) setDemoPresets(presets);
+    }).catch((error: unknown) => {
+      if (active) setErrorMessage(error instanceof Error ? error.message : "Unable to load presets");
+    });
+    return () => { active = false; };
+  }, [apiBaseUrl]);
 
   useEffect(() => {
-    if (!isPlaying || !cascadeResult) {
-      return;
-    }
+    let active = true;
+    fetchGrid(apiBaseUrl, scenario.input.condition).then((result) => {
+      if (active) dispatch({ type: "baseline", result, revision: scenario.revision });
+    }).catch((error: unknown) => {
+      if (active) setErrorMessage(error instanceof Error ? error.message : "Unable to load scenario");
+    });
+    return () => { active = false; };
+  }, [apiBaseUrl, scenario.input.condition, scenario.revision]);
 
+  useEffect(() => {
+    if (!isPlaying || !cascadeResult) return;
     const finalStepIndex = cascadeResult.steps.length - 1;
     if (currentStepIndex >= finalStepIndex) {
       setIsPlaying(false);
       return;
     }
-
-    const timeout = window.setTimeout(() => {
-      setCurrentStepIndex((stepIndex) => Math.min(stepIndex + 1, finalStepIndex));
-    }, 1000 / playbackSpeed);
-
-    return () => window.clearTimeout(timeout);
+    const timer = window.setTimeout(() => setCurrentStepIndex((index) => Math.min(index + 1, finalStepIndex)), 1000 / playbackSpeed);
+    return () => window.clearTimeout(timer);
   }, [cascadeResult, currentStepIndex, isPlaying, playbackSpeed]);
 
-  const onSelectionChange = useCallback(
-    ({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
-      const firstNode = selectedNodes[0];
-      const firstEdge = selectedEdges[0];
+  const configureScenario = useCallback((input: ScenarioInput) => {
+    dispatch({ type: "configure", input });
+    setCurrentStepIndex(0);
+    setIsPlaying(false);
+    setErrorMessage(null);
+  }, []);
 
-      if (firstNode && isGridNode(firstNode)) {
-        setSelected({ kind: "node", item: firstNode });
-        clearScenarioResults();
-        return;
+  const selectComponent = useCallback((component: ScenarioInput["component"]) => {
+    if (activeAction || component?.component_id === scenario.input.component?.component_id) return;
+    configureScenario({ ...scenario.input, component, presetId: null });
+  }, [activeAction, scenario.input, configureScenario]);
+
+  const handleLoadPreset = useCallback((preset: ApiDemoPreset) => {
+    configureScenario({
+      presetId: preset.id, profile: profileForCondition(preset.operating_condition),
+      condition: preset.operating_condition, component: preset.initial_failure,
+    });
+  }, [configureScenario]);
+
+  const handleOperatingProfileChange = useCallback((profile: OperatingProfileKey) => {
+    configureScenario({ ...scenario.input, profile, condition: operatingConditions[profile], presetId: null });
+  }, [configureScenario, scenario.input]);
+
+  const handleResetScenario = useCallback(() => {
+    dispatch({ type: "reset" });
+    setCurrentStepIndex(0);
+    setIsPlaying(false);
+    setErrorMessage(null);
+  }, []);
+
+  const runScenarioAction = useCallback(async (action: "predict" | "failure" | "cascade" | "mitigation") => {
+    const { component, condition, presetId } = scenario.input;
+    if (!component || activeAction || !scenario.baseline) return;
+    const revision = scenario.revision;
+    setActiveAction(action);
+    setIsPlaying(false);
+    setErrorMessage(null);
+    try {
+      const args = [apiBaseUrl, component.component_type, component.component_id, condition, presetId] as const;
+      if (action === "predict") {
+        dispatch({ type: "prediction", result: await predictRisk(...args), revision });
+      } else if (action === "failure") {
+        dispatch({ type: "failure", result: await simulateFailure(...args), revision });
+      } else if (action === "cascade") {
+        const result = await runCascade(...args);
+        dispatch({ type: "cascade", result, revision });
+        setCurrentStepIndex(0);
+      } else {
+        dispatch({ type: "recommendations", result: await findMitigations(...args), revision });
       }
-
-      if (firstEdge && isGridLine(firstEdge)) {
-        setSelected({ kind: "line", item: firstEdge });
-        clearScenarioResults();
-        return;
-      }
-
-      setSelected(null);
-      clearScenarioResults();
-    },
-    [clearScenarioResults],
-  );
-
-  const handleLoadPreset = useCallback(
-    async (preset: ApiDemoPreset) => {
-      try {
-        setActiveAction("reset");
-        setErrorMessage(null);
-        const response = await resetScenario(apiBaseUrl);
-        const nextFlowData = toFlowData(response);
-
-        setGrid(response);
-        setNodes(nextFlowData.nodes);
-        setEdges(nextFlowData.edges);
-        clearScenarioResults();
-        setOperatingProfile(profileForCondition(preset.operating_condition));
-        setSelectedPresetId(preset.id);
-        setSelected(findPresetSelection(preset, nextFlowData));
-      } catch (error) {
-        setErrorMessage(
-          error instanceof Error ? error.message : "Unable to load demo preset",
-        );
-      } finally {
-        setActiveAction(null);
-      }
-    },
-    [apiBaseUrl, clearScenarioResults, setEdges, setNodes],
-  );
-
-  const handleSimulateFailure = useCallback(async () => {
-    if (!selected) {
-      return;
-    }
-
-    const componentType = selected.kind === "line" ? "line" : selected.item.type;
-    const componentId = selected.item.id;
-
-    try {
-      setActiveAction("failure");
-      setErrorMessage(null);
-      const response = await simulateFailure(
-        apiBaseUrl,
-        componentType as ApiComponentType,
-        componentId,
-        operatingConditions[operatingProfile],
-      );
-      clearScenarioResults();
-      setFailureResult(response);
-      applyGridResponse(response.grid);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to simulate failure",
-      );
+      setErrorMessage(error instanceof Error ? error.message : "Unable to run scenario");
     } finally {
       setActiveAction(null);
     }
-  }, [apiBaseUrl, applyGridResponse, clearScenarioResults, operatingProfile, selected]);
+  }, [activeAction, apiBaseUrl, scenario]);
 
-  const handleResetScenario = useCallback(async () => {
-    try {
-      setActiveAction("reset");
-      setErrorMessage(null);
-      const response = await resetScenario(apiBaseUrl);
-      clearScenarioResults();
-      setOperatingProfile("baseline");
-      setSelected(null);
-      applyGridResponse(response);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to reset scenario",
-      );
-    } finally {
-      setActiveAction(null);
-    }
-  }, [apiBaseUrl, applyGridResponse, clearScenarioResults]);
-
-  const handleRunCascade = useCallback(async () => {
-    if (!selected) {
-      return;
-    }
-
-    const componentType = selected.kind === "line" ? "line" : selected.item.type;
-    const componentId = selected.item.id;
-
-    try {
-      setActiveAction("cascade");
-      setErrorMessage(null);
-      const response = await runCascade(
-        apiBaseUrl,
-        componentType as ApiComponentType,
-        componentId,
-        operatingConditions[operatingProfile],
-      );
-
-      setFailureResult(null);
-      setOriginalCascadeResult(response);
-      setMitigatedCascadeResult(null);
-      setMitigation(null);
-      setSelectedMitigation(null);
-      setRecommendationCascades(new Map());
-      setPrediction((currentPrediction) =>
-        currentPrediction
-          ? {
-              ...currentPrediction,
-              actualCascadeOccurred: response.cascade_depth > 0,
-              actualLoadLostPercent: response.final_metrics.load_lost_percent,
-            }
-          : null,
-      );
-      setCurrentStepIndex(0);
-      setIsPlaying(response.steps.length > 1);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to run cascade",
-      );
-    } finally {
-      setActiveAction(null);
-    }
-  }, [apiBaseUrl, operatingProfile, selected]);
-
-  const handleFindMitigation = useCallback(async () => {
-    if (!selected) {
-      return;
-    }
-
-    const componentType = selected.kind === "line" ? "line" : selected.item.type;
-    const componentId = selected.item.id;
-
-    try {
-      setActiveAction("mitigation");
-      setErrorMessage(null);
-      const response = await findMitigations(
-        apiBaseUrl,
-        componentType as ApiComponentType,
-        componentId,
-        operatingConditions[operatingProfile],
-      );
-      setMitigation(toMitigationResult(response));
-      setOriginalCascadeResult((current) => current ?? response.baseline_cascade_result);
-      setMitigatedCascadeResult(null);
-      setSelectedMitigation(null);
-      setRecommendationCascades(toRecommendationCascadeMap(response.recommendations));
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to find mitigations",
-      );
-    } finally {
-      setActiveAction(null);
-    }
-  }, [apiBaseUrl, operatingProfile, selected]);
-
-  const handleSimulateRecommendation = useCallback(
-    (recommendation: MitigationRecommendation) => {
-      const recommendedCascade = recommendationCascades.get(recommendation.rank);
-      if (!recommendedCascade) {
-        return;
-      }
-      setActiveAction("recommendation");
-      setSelectedMitigation(recommendation);
-      setMitigatedCascadeResult(recommendedCascade);
-      setCurrentStepIndex(0);
-      setIsPlaying(recommendedCascade.steps.length > 1);
-      window.setTimeout(() => setActiveAction(null), 0);
-    },
-    [recommendationCascades],
-  );
-
-  const handlePredictRisk = useCallback(async () => {
-    if (!selected) {
-      return;
-    }
-
-    const componentType = selected.kind === "line" ? "line" : selected.item.type;
-    const componentId = selected.item.id;
-
-    try {
-      setActiveAction("predict");
-      setErrorMessage(null);
-      const response = await predictRisk(
-        apiBaseUrl,
-        componentType as ApiComponentType,
-        componentId,
-        operatingConditions[operatingProfile],
-      );
-      setPrediction(toRiskPrediction(response));
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to predict risk",
-      );
-    } finally {
-      setActiveAction(null);
-    }
-  }, [apiBaseUrl, operatingProfile, selected]);
-
-  const handleOperatingProfileChange = useCallback(
-    (profile: OperatingProfileKey) => {
-      setOperatingProfile(profile);
-      clearScenarioResults();
-      void resetScenario(apiBaseUrl)
-        .then((response) => applyGridResponse(response, undefined, selectedRef.current))
-        .catch((error: unknown) => {
-          setErrorMessage(
-            error instanceof Error ? error.message : "Unable to reset scenario state",
-          );
-        });
-    },
-    [apiBaseUrl, applyGridResponse, clearScenarioResults],
-  );
+  const handlePredictRisk = () => { void runScenarioAction("predict"); };
+  const handleSimulateFailure = () => { void runScenarioAction("failure"); };
+  const handleRunCascade = () => { void runScenarioAction("cascade"); };
+  const handleFindMitigation = () => { void runScenarioAction("mitigation"); };
+  const handleSimulateRecommendation = (recommendation: MitigationRecommendation) => {
+    if (activeAction) return;
+    dispatch({ type: "replay", rank: recommendation.rank });
+    setCurrentStepIndex(0);
+    setIsPlaying(false);
+  };
 
   const handleSelectStep = useCallback((stepIndex: number) => {
     setCurrentStepIndex(stepIndex);
@@ -584,6 +363,7 @@ export function GridVisualization() {
           />
 
           <DemoSummaryPanel
+            selectedMitigation={selectedMitigation}
             mitigatedCascade={mitigatedCascadeResult}
             mitigation={mitigation}
             originalCascade={originalCascadeResult}
@@ -610,8 +390,11 @@ export function GridVisualization() {
                 nodeTypes={nodeTypes}
                 onEdgesChange={onEdgesChange}
                 onNodesChange={onNodesChange}
-                onPaneClick={() => setSelected(null)}
-                onSelectionChange={onSelectionChange}
+                onPaneClick={() => selectComponent(null)}
+                onNodeClick={(_, node) => selectComponent({ component_type: node.type as ApiComponentType, component_id: node.id })}
+                onEdgeClick={(_, edge) => {
+                  if (isGridLine(edge)) selectComponent({ component_type: "line", component_id: edge.id });
+                }}
               >
                 <Background color="#1e293b" gap={18} />
                 <MiniMap
@@ -669,33 +452,6 @@ export function GridVisualization() {
   );
 }
 
-const operatingConditions: Record<OperatingProfileKey, ApiOperatingCondition> = {
-  baseline: {
-    load_multiplier: 1.0,
-    generation_multiplier: 1.0,
-    line_rating_multiplier: 1.0,
-    dispatch_profile: "balanced",
-  },
-  stressed: {
-    load_multiplier: 1.25,
-    generation_multiplier: 0.9,
-    line_rating_multiplier: 0.45,
-    dispatch_profile: "south_reduced",
-  },
-  critical: {
-    load_multiplier: 1.25,
-    generation_multiplier: 1.0,
-    line_rating_multiplier: 0.35,
-    dispatch_profile: "balanced",
-  },
-  severe: {
-    load_multiplier: 1.5,
-    generation_multiplier: 0.8,
-    line_rating_multiplier: 0.32,
-    dispatch_profile: "south_heavy",
-  },
-};
-
 function profileForCondition(condition: ApiOperatingCondition): OperatingProfileKey {
   const match = Object.entries(operatingConditions).find(
     ([, profile]) =>
@@ -710,38 +466,6 @@ function profileForCondition(condition: ApiOperatingCondition): OperatingProfile
 
 function normalizeApiUrl(value: string | undefined) {
   return value?.replace(/\/$/, "") ?? "";
-}
-
-function findPresetSelection(
-  preset: ApiDemoPreset,
-  flowData: { nodes: GridNode[]; edges: GridLine[] },
-): SelectedGridElement {
-  const failure = preset.initial_failure;
-
-  if (failure.component_type === "line") {
-    const edge = flowData.edges.find((item) => item.id === failure.component_id);
-    return edge ? { kind: "line", item: edge } : null;
-  }
-
-  const node = flowData.nodes.find((item) => item.id === failure.component_id);
-  return node ? { kind: "node", item: node } : null;
-}
-
-function findMatchingSelection(
-  selection: SelectedGridElement,
-  flowData: { nodes: GridNode[]; edges: GridLine[] },
-): SelectedGridElement {
-  if (!selection) {
-    return null;
-  }
-
-  if (selection.kind === "line") {
-    const edge = flowData.edges.find((item) => item.id === selection.item.id);
-    return edge ? { kind: "line", item: edge } : null;
-  }
-
-  const node = flowData.nodes.find((item) => item.id === selection.item.id);
-  return node ? { kind: "node", item: node } : null;
 }
 
 function toRiskPrediction(response: ApiPredictionResponse): RiskPrediction {
@@ -801,15 +525,6 @@ function toMitigationOutcome(outcome: ApiMitigationResponse["baseline"]) {
   };
 }
 
-function toRecommendationCascadeMap(recommendations: ApiMitigationRecommendation[]) {
-  return new Map(
-    recommendations.map((recommendation) => [
-      recommendation.rank,
-      recommendation.cascade_result,
-    ]),
-  );
-}
-
 function Metric({ label, value }: { label: string; value: string }) {
   const tone =
     label.toLowerCase().includes("lost") ||
@@ -866,6 +581,7 @@ function ControlRail({
           Operating Profile
           <select
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold normal-case tracking-normal text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
+            disabled={busy}
             onChange={(event) => onOperatingProfileChange(event.target.value as OperatingProfileKey)}
             value={operatingProfile}
           >
@@ -1001,12 +717,14 @@ function StatusLegend({ color, label }: { color: string; label: string }) {
 }
 
 function DemoSummaryPanel({
+  selectedMitigation,
   mitigatedCascade,
   mitigation,
   originalCascade,
   prediction,
   preset,
 }: {
+  selectedMitigation: MitigationRecommendation | null;
   mitigatedCascade: ApiCascadeResponse | null;
   mitigation: MitigationResult | null;
   originalCascade: ApiCascadeResponse | null;
@@ -1017,7 +735,7 @@ function DemoSummaryPanel({
     return null;
   }
 
-  const bestRecommendation = mitigation?.recommendations[0] ?? null;
+  const bestRecommendation = selectedMitigation ?? mitigation?.recommendations[0] ?? null;
 
   return (
     <section className="border-b border-slate-800 bg-slate-900/80 px-5 py-4">
@@ -1051,7 +769,7 @@ function DemoSummaryPanel({
             ["Cascade depth", originalCascade ? originalCascade.cascade_depth.toString() : "Run cascade"],
             ["Failed lines", originalCascade ? originalCascade.final_metrics.failed_lines.toString() : "Run cascade"],
           ]}
-          title="Actual"
+           title="Original Cascade"
         />
         <SummaryCard
           rows={[

@@ -206,9 +206,10 @@ const displayStatuses: Record<ApiStatus, GridStatus> = {
   failed: "Failed",
 };
 
-export async function fetchGrid(apiBaseUrl: string): Promise<ApiGridResponse> {
+export async function fetchGrid(apiBaseUrl: string, condition?: ApiOperatingCondition): Promise<ApiGridResponse> {
   requireApiBaseUrl(apiBaseUrl);
-  const response = await fetch(`${apiBaseUrl}/api/grid`, {
+  const query = condition ? `?${new URLSearchParams(Object.entries(condition).map(([key, value]) => [key, String(value)]))}` : "";
+  const response = await fetch(`${apiBaseUrl}/api/grid${query}`, {
     cache: "no-store",
   });
 
@@ -238,6 +239,7 @@ export async function simulateFailure(
   componentType: ApiComponentType,
   componentId: string,
   operatingCondition: ApiOperatingCondition,
+  presetId: string | null = null,
 ): Promise<ApiFailureResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/failure`, {
@@ -245,6 +247,7 @@ export async function simulateFailure(
       component_type: componentType,
       component_id: componentId,
       operating_condition: operatingCondition,
+      preset_id: presetId,
     }),
     cache: "no-store",
     headers: {
@@ -279,6 +282,7 @@ export async function runCascade(
   componentType: ApiComponentType,
   componentId: string,
   operatingCondition: ApiOperatingCondition,
+  presetId: string | null = null,
 ): Promise<ApiCascadeResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/cascade`, {
@@ -286,6 +290,7 @@ export async function runCascade(
       component_type: componentType,
       component_id: componentId,
       operating_condition: operatingCondition,
+      preset_id: presetId,
     }),
     cache: "no-store",
     headers: {
@@ -306,6 +311,7 @@ export async function predictRisk(
   componentType: ApiComponentType,
   componentId: string,
   operatingCondition: ApiOperatingCondition,
+  presetId: string | null = null,
 ): Promise<ApiPredictionResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/predict`, {
@@ -313,6 +319,7 @@ export async function predictRisk(
       component_type: componentType,
       component_id: componentId,
       operating_condition: operatingCondition,
+      preset_id: presetId,
     }),
     cache: "no-store",
     headers: {
@@ -333,6 +340,7 @@ export async function findMitigations(
   componentType: ApiComponentType,
   componentId: string,
   operatingCondition: ApiOperatingCondition,
+  presetId: string | null = null,
 ): Promise<ApiMitigationResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/recommend`, {
@@ -340,6 +348,7 @@ export async function findMitigations(
       component_type: componentType,
       component_id: componentId,
       operating_condition: operatingCondition,
+      preset_id: presetId,
       top_n: 3,
     }),
     cache: "no-store",
