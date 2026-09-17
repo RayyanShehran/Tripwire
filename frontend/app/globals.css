@@ -51,6 +51,22 @@ h3 { font-size: 16px; font-weight: 600; }
 .progress-track { height: 7px; background: var(--color-hairline); overflow: hidden; border-radius: var(--radius-control); }
 .progress-fill { height: 100%; background: var(--color-ink); }
 .react-flow__node { font-family: inherit; }
+.grid-node { width: 156px; height: 84px; border: 1px solid var(--color-mid-gray); border-radius: var(--radius-small); padding: 9px 11px; background: var(--color-paper); color: var(--color-ink); }
+.grid-node.status-stressed { border: 2px dashed var(--color-ink-soft); padding: 8px 10px; }
+.grid-node.status-overloaded { border: 3px solid var(--color-ink); padding: 7px 9px; }
+.grid-node.status-failed { border-color: var(--color-ember); color: var(--color-ember); }
+.grid-node.new-failure { outline: 2px solid var(--color-ember); outline-offset: 4px; }
+.react-flow__node.selected .grid-node { outline: 2px solid var(--color-ink); outline-offset: 4px; }
+.grid-node .react-flow__handle { width: 5px; height: 5px; border: none; background: var(--color-mid-gray); }
+.node-caption { display: flex; gap: 5px; align-items: center; font-size: 10px; text-transform: uppercase; color: var(--color-mid-gray); }
+.node-name { font-size: 13px; font-weight: 600; line-height: 15px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-reading { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 4px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.node-reading small { font-size: 10px; color: var(--color-mid-gray); }
+.node-status { display: flex; align-items: center; gap: 2px; font-size: 9px; }
+.edge-label { pointer-events: none; position: absolute; display: flex; align-items: center; gap: 4px; padding: 2px 4px; border: 1px solid var(--color-hairline); border-radius: 3px; background: var(--color-paper); font-size: 10px; color: var(--color-mid-gray); white-space: nowrap; }
+.edge-label strong { color: var(--color-ink); font-weight: 500; }
+.edge-label.is-selected { border-color: var(--color-ink); }
+.edge-label.danger, .edge-label.danger strong { color: var(--color-ember); }
 .react-flow__attribution { background: var(--color-paper) !important; color: var(--color-mid-gray) !important; }
 .react-flow__controls { box-shadow: var(--shadow-card) !important; }
 .react-flow__controls-button { background: var(--color-paper) !important; color: var(--color-ink) !important; border-color: var(--color-hairline) !important; }

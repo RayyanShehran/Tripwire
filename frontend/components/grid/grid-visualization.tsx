@@ -14,6 +14,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { toFlowData } from "./flow-layout";
 import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel } from "./info-panel";
 import {
@@ -23,13 +24,9 @@ import {
   predictRisk,
   runCascade,
   simulateFailure,
-  toLineData,
-  toNodeData,
   type ApiCascadeResponse,
-  type ApiCascadeStep,
   type ApiComponentType,
   type ApiDemoPreset,
-  type ApiGridResponse,
   type ApiMitigationRecommendation,
   type ApiMitigationResponse,
   type ApiOperatingCondition,
@@ -854,130 +851,4 @@ function StateMessage({ title, message }: { title: string; message: string }) {
       </div>
     </div>
   );
-}
-
-function toFlowData(
-  grid: ApiGridResponse,
-  step?: ApiCascadeStep,
-): { nodes: GridNode[]; edges: GridLine[] } {
-  const busNodes = grid.nodes.filter((node) => node.type === "bus");
-  const generatorNodes = grid.nodes.filter((node) => node.type === "generator");
-  const loadNodes = grid.nodes.filter((node) => node.type === "load");
-  const busPositions = layoutBusPositions(busNodes.map((node) => node.id));
-  const attachmentCounts = new Map<string, number>();
-  const newlyFailedComponentIds = new Set(
-    step?.newly_failed_components.map((component) => component.component_id) ?? [],
-  );
-  const overloadedLineIds = new Set(
-    step?.overloaded_lines.map((line) => line.component_id) ?? [],
-  );
-
-  const nodes: GridNode[] = [
-    ...busNodes.map((node) => ({
-      id: node.id,
-      type: "bus" as const,
-      position: busPositions.get(node.id) ?? { x: 0, y: 0 },
-      data: {
-        ...toNodeData(node),
-        isNewlyFailed: newlyFailedComponentIds.has(node.id),
-      },
-    })),
-    ...generatorNodes.map((node) => ({
-      id: node.id,
-      type: "generator" as const,
-      position: attachmentPosition(node.connected_bus_id ?? undefined, busPositions, attachmentCounts, -210),
-      data: {
-        ...toNodeData(node),
-        isNewlyFailed: newlyFailedComponentIds.has(node.id),
-      },
-    })),
-    ...loadNodes.map((node) => ({
-      id: node.id,
-      type: "load" as const,
-      position: attachmentPosition(node.connected_bus_id ?? undefined, busPositions, attachmentCounts, 210),
-      data: {
-        ...toNodeData(node),
-        isNewlyFailed: newlyFailedComponentIds.has(node.id),
-      },
-    })),
-  ];
-
-  const transmissionEdges: GridLine[] = grid.lines.map((line) => ({
-    id: line.id,
-    type: "transmissionLine" as const,
-    source: line.source,
-    target: line.target,
-    data: {
-      ...toLineData(line),
-      isCurrentlyOverloaded: overloadedLineIds.has(line.id),
-      isNewlyFailed: newlyFailedComponentIds.has(line.id),
-    },
-  }));
-
-  const attachmentEdges: GridLine[] = [...generatorNodes, ...loadNodes]
-    .filter((node) => node.connected_bus_id !== null)
-    .map((node) => ({
-      id: `connection-${node.id}`,
-      type: "transmissionLine" as const,
-      source: node.type === "generator" ? node.id : node.connected_bus_id!,
-      target: node.type === "generator" ? node.connected_bus_id! : node.id,
-      data: {
-        name: "Connection",
-        loadingPercent: 0,
-        capacityMw: 0,
-        isNewlyFailed: newlyFailedComponentIds.has(node.id),
-        status: toDisplayConnectionStatus(node.status),
-        },
-      selectable: false,
-    }));
-
-  return { nodes, edges: [...transmissionEdges, ...attachmentEdges] };
-}
-
-function layoutBusPositions(busIds: string[]): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number }>();
-  const columns = 4;
-  const xGap = 250;
-  const yGap = 230;
-
-  busIds.forEach((id, index) => {
-    positions.set(id, {
-      x: 260 + (index % columns) * xGap,
-      y: 120 + Math.floor(index / columns) * yGap,
-    });
-  });
-
-  return positions;
-}
-
-function attachmentPosition(
-  connectedBusId: string | undefined,
-  busPositions: Map<string, { x: number; y: number }>,
-  attachmentCounts: Map<string, number>,
-  xOffset: number,
-): { x: number; y: number } {
-  const busPosition = connectedBusId ? busPositions.get(connectedBusId) : undefined;
-
-  if (!busPosition || !connectedBusId) {
-    return { x: 0, y: 0 };
-  }
-
-  const count = attachmentCounts.get(connectedBusId) ?? 0;
-  attachmentCounts.set(connectedBusId, count + 1);
-
-  return {
-    x: busPosition.x + xOffset,
-    y: busPosition.y + count * 92 - 28,
-  };
-}
-
-function toDisplayConnectionStatus(status: "healthy" | "stressed" | "overloaded" | "failed") {
-  const displayStatuses = {
-    healthy: "Healthy",
-    stressed: "Stressed",
-    overloaded: "Overloaded",
-    failed: "Failed",
-  } as const;
-
-  return displayStatuses[status];
 }
