@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.simulation.config import build_scenario_network, scenario_config
+from app.simulation.config import build_scenario_network, scenario_config, scenario_fingerprint
 from app.simulation.grid import run_power_flow, serialize_grid_state
 from app.simulation.mitigation import MitigationAction, apply_mitigation_action, recommend_mitigations
 
@@ -58,6 +59,7 @@ def test_prediction_cascade_and_recommendation_share_scenario_fingerprint() -> N
         recommendation.json()["scenario_id"],
     }
     assert len(scenario_ids) == 1
+    assert prediction.json()["pre_failure_metrics"]["total_demand_mw"] == 500.0
     assert prediction.json()["scenario_config"] == cascade.json()["scenario_config"]
     assert recommendation.json()["scenario_config"] == cascade.json()["scenario_config"]
 
@@ -102,3 +104,30 @@ def test_recommendation_replay_does_not_mutate_original_cascade() -> None:
     assert original["final_metrics"]["load_lost_percent"] == pytest.approx(100.0)
     assert mitigated["final_metrics"]["load_lost_percent"] == pytest.approx(5.0)
     assert result["baseline_cascade_result"] == original
+
+
+def test_grid_preview_matches_operating_profile() -> None:
+    response = TestClient(app).get("/api/grid", params=STRESSED_CONDITION)
+    assert response.status_code == 200
+    assert response.json()["metrics"]["total_demand_mw"] == 500.0
+
+
+@pytest.mark.parametrize("endpoint", ["failure", "cascade", "predict", "recommend"])
+def test_invalid_dispatch_is_rejected_consistently(endpoint: str) -> None:
+    response = TestClient(app).post(f"/api/{endpoint}", json={
+        "component_type": "line", "component_id": "line-101",
+        "operating_condition": {"dispatch_profile": "invalid"},
+    })
+    assert response.status_code == 422
+
+
+def test_fingerprints_preserve_precision_but_ignore_preset_label() -> None:
+    config = scenario_config("line", "line-101", STRESSED_CONDITION)
+    assert scenario_fingerprint(config) != scenario_fingerprint(replace(config, load_multiplier=1.250001))
+    assert scenario_fingerprint(config) == scenario_fingerprint(replace(config, preset_id="example"))
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -1.0])
+def test_scenario_builder_rejects_nonfinite_or_negative_inputs(value: float) -> None:
+    with pytest.raises(ValueError):
+        scenario_config("line", "line-101", {"load_multiplier": value})

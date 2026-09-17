@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any
 
 from app.simulation.grid import GridComponentType, create_test_grid
@@ -61,6 +62,10 @@ def scenario_config(
 
 
 def validate_scenario_config(config: ScenarioConfig) -> None:
+    if not all(isfinite(value) for value in (
+        config.load_multiplier, config.generation_multiplier, config.line_rating_multiplier
+    )):
+        raise ValueError("Operating multipliers must be finite")
     if config.load_multiplier <= 0:
         raise ValueError("load_multiplier must be greater than 0")
     if config.generation_multiplier <= 0:
@@ -104,9 +109,9 @@ def available_generation_capacity_mw(config: ScenarioConfig) -> float:
 def scenario_config_payload(config: ScenarioConfig) -> dict[str, Any]:
     return {
         "preset_id": config.preset_id,
-        "load_multiplier": round(config.load_multiplier, 4),
-        "generation_multiplier": round(config.generation_multiplier, 4),
-        "line_rating_multiplier": round(config.line_rating_multiplier, 4),
+        "load_multiplier": float(config.load_multiplier),
+        "generation_multiplier": float(config.generation_multiplier),
+        "line_rating_multiplier": float(config.line_rating_multiplier),
         "dispatch_profile": config.dispatch_profile,
         "initial_component_type": config.initial_failure.component_type,
         "initial_component_id": config.initial_failure.component_id,

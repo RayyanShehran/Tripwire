@@ -53,8 +53,9 @@ def feature_frame_from_config(
     line_rating_multiplier: float = 1.0,
     dispatch_profile: str = "balanced",
     seed: int = 42,
+    config: ScenarioConfig | None = None,
 ) -> pd.DataFrame:
-    config = ScenarioConfig(
+    config = config or ScenarioConfig(
         load_multiplier=load_multiplier,
         generation_multiplier=generation_multiplier,
         line_rating_multiplier=line_rating_multiplier,

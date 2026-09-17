@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from time import perf_counter
 from typing import Any, Literal, TypedDict
 
@@ -41,6 +42,9 @@ class MitigationOutcome(TypedDict):
 
 
 class MitigationImprovement(TypedDict):
+    load_loss_before_percent: float
+    load_loss_after_percent: float
+    load_loss_reduction_percentage_points: float
     load_loss_reduction_percent_points: float
     failed_lines_reduced: int
     failed_components_reduced: int
@@ -97,6 +101,10 @@ def recommend_mitigations(
             config=config,
         )
         outcome = _outcome(result)
+        if result["termination_reason"] == "power_flow_failed":
+            continue
+        if outcome["original_demand_mw"] != baseline["original_demand_mw"]:
+            raise ValueError("Mitigation candidate changed original demand")
         improvement = _improvement(baseline, outcome)
         score = _score(improvement, action.cost)
         evaluated.append(
@@ -261,6 +269,16 @@ def apply_mitigation_action(net: Any, action: MitigationAction) -> None:
         increase_id = str(action.parameters["increase_generator_id"])
         decrease_id = str(action.parameters["decrease_generator_id"])
         delta_mw = float(action.parameters["delta_mw"])
+        if not isfinite(delta_mw) or delta_mw <= 0 or increase_id == decrease_id:
+            raise ValueError("Invalid redispatch amount or generator pair")
+        for generator_id, change in ((increase_id, delta_mw), (decrease_id, -delta_mw)):
+            matches = net.gen.index[net.gen["tripwire_id"] == generator_id].tolist()
+            if not matches:
+                raise GridComponentNotFoundError(f"Unknown generator: {generator_id}")
+            generator = net.gen.loc[matches[0]]
+            target = float(generator["p_mw"]) + change
+            if not bool(generator["in_service"]) or not 0 <= target <= float(generator["max_p_mw"]):
+                raise ValueError(f"Redispatch exceeds limits for {generator_id}")
         _adjust_generator(net, increase_id, delta_mw)
         _adjust_generator(net, decrease_id, -delta_mw)
         if abs(float(net.load["p_mw"].sum()) - demand_before) > 1e-9:
@@ -271,6 +289,10 @@ def apply_mitigation_action(net: Any, action: MitigationAction) -> None:
         demand_before = float(net.load["p_mw"].sum())
         bus_id = str(action.parameters["bus_id"])
         shed_percent = float(action.parameters["shed_percent"])
+        if not isfinite(shed_percent) or not 0 < shed_percent <= MAX_LOAD_SHED_PERCENT:
+            raise ValueError("Invalid controlled shedding percentage")
+        if "tripwire_original_demand_mw" not in net:
+            net["tripwire_original_demand_mw"] = demand_before
         if bus_id == "all":
             net.load.loc[:, "p_mw"] = net.load["p_mw"] * (1.0 - shed_percent / 100.0)
             net.load.loc[:, "q_mvar"] = net.load["q_mvar"] * (1.0 - shed_percent / 100.0)
@@ -306,10 +328,10 @@ def _adjust_generator(net: Any, generator_id: str, delta_mw: float) -> None:
 
 
 def _generator_dispatch_targets(config: ScenarioConfig) -> dict[str, float]:
-    factors = DISPATCH_FACTORS[config.dispatch_profile]
+    net = build_scenario_network(config)
     return {
-        generator_id: round(base_mw * config.generation_multiplier * factors[generator_id], 4)
-        for generator_id, base_mw in {"gen-south": 150.0, "gen-harbor": 95.0}.items()
+        str(generator["tripwire_id"]): float(generator["p_mw"])
+        for _, generator in net.gen.iterrows() if bool(generator["in_service"])
     }
 
 
@@ -344,6 +366,11 @@ def _improvement(
     outcome: MitigationOutcome,
 ) -> MitigationImprovement:
     return {
+        "load_loss_before_percent": baseline["load_lost_percent"],
+        "load_loss_after_percent": outcome["load_lost_percent"],
+        "load_loss_reduction_percentage_points": round(
+            baseline["load_lost_percent"] - outcome["load_lost_percent"], 4
+        ),
         "load_loss_reduction_percent_points": round(
             baseline["load_lost_percent"] - outcome["load_lost_percent"], 4
         ),

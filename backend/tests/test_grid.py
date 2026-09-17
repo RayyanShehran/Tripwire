@@ -326,10 +326,10 @@ def test_stateless_failure_rejects_invalid_component_without_state() -> None:
 
 
 def test_get_api_grid_handles_convergence_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    def raise_convergence_error() -> None:
+    def raise_convergence_error(net) -> None:
         raise GridConvergenceError("Power flow did not converge")
 
-    monkeypatch.setattr(main, "get_baseline_grid", raise_convergence_error)
+    monkeypatch.setattr(main, "run_power_flow", raise_convergence_error)
     client = TestClient(app)
 
     response = client.get("/api/grid")

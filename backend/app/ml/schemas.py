@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, NotRequired
 
 RANDOM_SEED = 42
 MODEL_VERSION = "tripwire-ml-v1"
@@ -19,6 +19,7 @@ RISK_THRESHOLDS = {
 
 
 class PredictionResult(TypedDict):
+    pre_failure_metrics: NotRequired[dict[str, float]]
     scenario_id: str
     scenario_config: dict[str, object]
     cascade_probability: float

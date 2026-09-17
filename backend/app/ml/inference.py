@@ -93,10 +93,16 @@ def predict_from_config(
         line_rating_multiplier=config.line_rating_multiplier,
         dispatch_profile=config.dispatch_profile,
         seed=config.seed,
+        config=config,
     )
     result = predict_from_frame(frame, model_dir=model_dir)
     result["scenario_id"] = scenario_fingerprint(config)
     result["scenario_config"] = scenario_config_payload(config)
+    result["pre_failure_metrics"] = {
+        "total_demand_mw": float(frame.iloc[0]["total_demand_mw"]),
+        "total_generation_mw": float(frame.iloc[0]["total_generation_mw"]),
+        "available_generation_capacity_mw": float(frame.iloc[0]["available_generation_capacity_mw"]),
+    }
     return result
 
 

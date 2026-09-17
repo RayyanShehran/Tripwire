@@ -1,8 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from time import perf_counter
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +16,14 @@ from app.ml.inference import (
     load_model_bundle,
     predict_from_config,
 )
-from app.simulation.config import ScenarioConfig, scenario_config
+from app.simulation.config import ScenarioConfig, scenario_config, build_scenario_network
 from app.simulation.cascade import DEFAULT_MAX_CASCADE_STEPS, simulate_cascade
 from app.simulation.grid import (
     GridComponentNotFoundError,
     GridComponentType,
     GridConvergenceError,
+    run_power_flow,
+    serialize_grid_state,
 )
 from app.simulation.mitigation import recommend_mitigations
 from app.simulation.demo import list_demo_presets
@@ -69,14 +72,15 @@ class FailureRequest(BaseModel):
 
 
 class OperatingCondition(BaseModel):
-    load_multiplier: float = Field(default=1.0, gt=0)
-    generation_multiplier: float = Field(default=1.0, gt=0)
-    line_rating_multiplier: float = Field(default=1.0, gt=0)
-    dispatch_profile: str = Field(default="balanced", min_length=1)
+    load_multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    generation_multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    line_rating_multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    dispatch_profile: Literal["balanced", "south_heavy", "harbor_heavy", "south_reduced"] = "balanced"
 
 
 class ScenarioRequest(FailureRequest):
     operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
+    preset_id: str | None = None
 
 
 class CascadeRequest(ScenarioRequest):
@@ -129,11 +133,13 @@ def ready() -> dict:
 
 
 @app.get("/api/grid")
-def get_grid() -> dict:
+def get_grid(condition: OperatingCondition = Depends()) -> dict:
     logger.info("grid baseline requested")
     start = perf_counter()
     try:
-        return get_baseline_grid()
+        net = build_scenario_network(scenario_config("line", "line-101", condition.model_dump()))
+        run_power_flow(net)
+        return serialize_grid_state(net)
     except GridConvergenceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     finally:
@@ -223,7 +229,7 @@ def predict_risk(request: PredictionRequest) -> dict:
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ModelNotTrainedError as exc:
+    except (ModelNotTrainedError, GridConvergenceError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (PredictionInputError, KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -253,6 +259,8 @@ def recommend_actions(request: RecommendationRequest) -> dict:
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GridConvergenceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
@@ -268,4 +276,5 @@ def _scenario_config_from_request(request: ScenarioRequest) -> ScenarioConfig:
         request.component_type,
         request.component_id,
         request.operating_condition.model_dump(),
+        preset_id=request.preset_id,
     )
