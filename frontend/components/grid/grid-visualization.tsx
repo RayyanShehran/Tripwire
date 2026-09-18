@@ -35,6 +35,12 @@ export function GridVisualization() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
   const [selectedComponent, setSelectedComponent] = useState<ScenarioInput["component"]>(null);
+  const {
+    load_multiplier: loadMultiplier,
+    generation_multiplier: generationMultiplier,
+    line_rating_multiplier: lineRatingMultiplier,
+    dispatch_profile: dispatchProfile,
+  } = scenario.input.condition;
   const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
   const grid = currentCascadeStep?.grid
     ?? (scenario.view === "failure" ? scenario.failure?.grid : null)
@@ -81,9 +87,16 @@ export function GridVisualization() {
   }, [apiBaseUrl]);
 
   useEffect(() => {
-    setNodes(flowData.nodes.map((node) => ({ ...node, selected: node.id === scenario.input.component?.component_id })));
-    setEdges(flowData.edges.map((edge) => ({ ...edge, selected: edge.id === scenario.input.component?.component_id })));
-  }, [flowData, scenario.input.component, setNodes, setEdges]);
+    const selectedId = selectedComponent?.component_id;
+    setNodes(flowData.nodes.map((node) => {
+      const isSelected = node.id === selectedId;
+      return node.selected === isSelected ? node : { ...node, selected: isSelected };
+    }));
+    setEdges(flowData.edges.map((edge) => {
+      const isSelected = edge.id === selectedId;
+      return edge.selected === isSelected ? edge : { ...edge, selected: isSelected };
+    }));
+  }, [flowData, selectedComponent, setNodes, setEdges]);
 
   useEffect(() => {
     let active = true;
@@ -97,13 +110,19 @@ export function GridVisualization() {
 
   useEffect(() => {
     let active = true;
-    fetchGrid(apiBaseUrl, scenario.input.condition).then((result) => {
-      if (active) dispatch({ type: "baseline", result, revision: scenario.revision });
+    const condition = {
+      load_multiplier: loadMultiplier,
+      generation_multiplier: generationMultiplier,
+      line_rating_multiplier: lineRatingMultiplier,
+      dispatch_profile: dispatchProfile,
+    };
+    fetchGrid(apiBaseUrl, condition).then((result) => {
+      if (active) dispatch({ type: "baseline", result, condition });
     }).catch((error: unknown) => {
       if (active) setErrorMessage(error instanceof Error ? error.message : "Unable to load scenario");
     });
     return () => { active = false; };
-  }, [apiBaseUrl, scenario.input.condition, scenario.revision]);
+  }, [apiBaseUrl, loadMultiplier, generationMultiplier, lineRatingMultiplier, dispatchProfile]);
 
   useEffect(() => {
     if (!isPlaying || !cascadeResult) return;

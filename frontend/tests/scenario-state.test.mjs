@@ -39,7 +39,7 @@ test("replaying mitigation preserves the original cascade and prediction", () =>
   assert.equal(state.mitigatedCascadeResult, null);
 });
 
-test("each operating input change clears all results", () => {
+test("scenario input changes clear derived results and only operating changes clear the baseline", () => {
   const state = scenarioReducer(completedScenario(), { type: "replay", rank: 1 });
   for (const patch of [
     { presetId: "another-preset" },
@@ -49,9 +49,10 @@ test("each operating input change clears all results", () => {
     { component: { component_type: "line", component_id: "line-402" } },
   ]) {
     const updated = scenarioReducer(state, { type: "configure", input: { ...state.input, ...patch } });
-    for (const key of ["baseline", "prediction", "failure", "originalCascadeResult", "recommendations", "selectedMitigationRank", "mitigatedCascadeResult"]) {
+    for (const key of ["prediction", "failure", "originalCascadeResult", "recommendations", "selectedMitigationRank", "mitigatedCascadeResult"]) {
       assert.equal(updated[key], null, key);
     }
+    assert.equal(updated.baseline, patch.condition && patch.condition !== state.input.condition ? null : state.baseline);
     assert.equal(updated.revision, state.revision + 1);
   }
 });
@@ -63,9 +64,12 @@ test("reset clears hidden results and returns the baseline profile", () => {
 
 test("late responses cannot restore results after reset or profile change", () => {
   const reset = scenarioReducer(completedScenario(), { type: "reset" });
-  for (const type of ["cascade", "prediction", "failure", "recommendations", "baseline"]) {
+  for (const type of ["cascade", "prediction", "failure", "recommendations"]) {
     assert.equal(scenarioReducer(reset, { type, result: original, revision: 0 }), reset);
   }
+  assert.equal(scenarioReducer(reset, {
+    type: "baseline", result: original, condition: operatingConditions.stressed,
+  }), reset);
 });
 
 test("single failure preserves the scenario component and prediction", () => {
@@ -113,7 +117,7 @@ test("clearing results preserves explicit preset identity", () => {
     component: { component_type: "line", component_id: "line-101" },
   };
   let state = scenarioReducer(initialScenario(), { type: "configure", input });
-  state = scenarioReducer(state, { type: "baseline", result: { nodes: [], lines: [], metrics: {} }, revision: 1 });
+  state = scenarioReducer(state, { type: "baseline", result: { nodes: [], lines: [], metrics: {} }, condition: input.condition });
   const cleared = scenarioReducer(state, { type: "clear-results" });
   assert.equal(cleared.input.presetId, "mitigation-example");
   assert.equal(scenarioDisplayName(cleared.input, presets), "Mitigation Example");
@@ -148,6 +152,35 @@ test("preparing a newly inspected component preserves the grid but invalidates r
   assert.equal(prepared.originalCascadeResult, null);
   assert.equal(prepared.recommendations, null);
   assert.equal(prepared.revision, state.revision + 1);
+});
+
+test("configuration changes with the same operating condition preserve the baseline", () => {
+  const baseline = { nodes: [], lines: [], metrics: {} };
+  const state = { ...initialScenario(), baseline };
+  const configured = scenarioReducer(state, {
+    type: "configure",
+    input: {
+      ...state.input,
+      presetId: "mitigation-example",
+      component: { component_type: "line", component_id: "line-101" },
+      condition: { ...state.input.condition },
+    },
+  });
+  assert.equal(configured.baseline, baseline);
+  assert.equal(scenarioReducer(state, { type: "reset" }).baseline, baseline);
+});
+
+test("baseline responses are matched by operating condition rather than scenario revision", () => {
+  const result = { nodes: [], lines: [], metrics: {} };
+  const prepared = scenarioReducer(initialScenario(), {
+    type: "prepare", component: { component_type: "line", component_id: "line-101" },
+  });
+  assert.equal(scenarioReducer(prepared, {
+    type: "baseline", result, condition: operatingConditions.baseline,
+  }).baseline, result);
+  assert.equal(scenarioReducer(prepared, {
+    type: "baseline", result, condition: operatingConditions.stressed,
+  }).baseline, null);
 });
 
 test("baseline network retains its special label", () => {

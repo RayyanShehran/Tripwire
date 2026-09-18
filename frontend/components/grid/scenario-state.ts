@@ -60,7 +60,6 @@ function sameOperatingCondition(left: ApiOperatingCondition, right: ApiOperating
 }
 
 type ResultAction =
-  | { type: "baseline"; result: ApiGridResponse }
   | { type: "prediction"; result: ApiPredictionResponse }
   | { type: "failure"; result: ApiFailureResponse }
   | { type: "cascade"; result: ApiCascadeResponse }
@@ -68,6 +67,7 @@ type ResultAction =
 
 export type ScenarioAction =
   | { type: "configure"; input: ScenarioInput }
+  | { type: "baseline"; result: ApiGridResponse; condition: ApiOperatingCondition }
   | { type: "prepare"; component: NonNullable<ScenarioInput["component"]> }
   | { type: "clear-results" }
   | { type: "reset" }
@@ -75,9 +75,17 @@ export type ScenarioAction =
   | (ResultAction & { revision: number });
 
 export function scenarioReducer(state: ScenarioState, action: ScenarioAction): ScenarioState {
-  if (action.type === "reset") return initialScenario(state.revision + 1);
+  if (action.type === "reset") {
+    const reset = initialScenario(state.revision + 1);
+    return sameOperatingCondition(state.input.condition, reset.input.condition)
+      ? { ...reset, baseline: state.baseline }
+      : reset;
+  }
   if (action.type === "configure") {
-    return { ...initialScenario(state.revision + 1), input: action.input };
+    const configured = { ...initialScenario(state.revision + 1), input: action.input };
+    return sameOperatingCondition(state.input.condition, action.input.condition)
+      ? { ...configured, baseline: state.baseline }
+      : configured;
   }
   if (action.type === "prepare") {
     if (sameComponent(state.input.component, action.component)) return state;
@@ -93,9 +101,13 @@ export function scenarioReducer(state: ScenarioState, action: ScenarioAction): S
     if (!candidate || candidate.cascade_result.scenario_id !== state.originalCascadeResult?.scenario_id) return state;
     return { ...state, selectedMitigationRank: action.rank, mitigatedCascadeResult: candidate.cascade_result, view: "mitigated" };
   }
+  if (action.type === "baseline") {
+    return sameOperatingCondition(state.input.condition, action.condition)
+      ? { ...state, baseline: action.result }
+      : state;
+  }
   // Responses from a previous profile/selection cannot restore invalidated results.
   if (action.revision !== state.revision) return state;
-  if (action.type === "baseline") return { ...state, baseline: action.result };
   const knownId = state.prediction?.scenario_id ?? state.originalCascadeResult?.scenario_id ?? state.failure?.scenario_id;
   if (knownId && knownId !== action.result.scenario_id) return state;
   if (action.type === "prediction") return { ...state, prediction: action.result };
