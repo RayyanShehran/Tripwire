@@ -2,15 +2,15 @@
 
 Tripwire is a web-based power-grid cascading failure simulation and decision-support platform.
 
-This repository currently contains the first working local version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, a deterministic cascading-failure engine, baseline scikit-learn risk models trained on synthetic Tripwire scenarios, and a Next.js frontend that renders the network with React Flow.
+This repository contains a deployed working version of Tripwire. It includes a FastAPI backend that builds and solves a small pandapower transmission network, a deterministic cascading-failure engine, baseline scikit-learn risk models trained on synthetic Tripwire scenarios, and a Next.js frontend that renders the network with React Flow.
 
 Tripwire remains a university/demo project; its results are based on synthetic simulation data.
 
 ## Live Demo
 
-Frontend URL: not deployed yet.
+Frontend: https://tripwire-eta.vercel.app
 
-API URL: not deployed yet.
+API: https://tripwire-api-4ecd.onrender.com
 
 Deployment instructions are in `docs/deployment.md`.
 
@@ -517,7 +517,6 @@ Not implemented yet:
 
 - Interactive grid editor.
 - Real utility dataset ingestion.
-- Production deployment.
 
 ## Limitations
 
@@ -527,4 +526,4 @@ Not implemented yet:
 - Tripwire is not intended for operational grid control.
 - ML metrics apply only to generated Tripwire simulation scenarios.
 - Mitigation recommendations are simulation-derived and not guaranteed blackout prevention.
-- Deployment configuration is prepared conceptually, but the app has not been deployed from this repository.
+- The Render free service sleeps after inactivity, so its first request can take 50 seconds or more.

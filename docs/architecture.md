@@ -543,4 +543,4 @@ frontend: install pnpm dependencies, run tests, run lint, run production build
 - No real utility operating data has been used for validation.
 - The application is not intended for operational grid control.
 - Mitigation recommendations are simulation-derived and bounded to simple redispatch/load-shedding candidates.
-- Deployment files are not included because no deployment target has been selected.
+- The frontend is deployed on Vercel and the API is deployed on Render using the repository deployment configuration.

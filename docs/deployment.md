@@ -1,6 +1,11 @@
 # Tripwire Deployment Guide
 
-Tripwire is prepared for a hosted frontend on Vercel and a hosted FastAPI backend on Render or Railway. This guide does not deploy automatically.
+Tripwire is deployed with a Vercel frontend and a Render FastAPI backend:
+
+- Frontend: https://tripwire-eta.vercel.app
+- API: https://tripwire-api-4ecd.onrender.com
+
+The Render service uses the free plan and can take 50 seconds or more to wake after inactivity.
 
 ## Frontend: Vercel
 
@@ -9,7 +14,7 @@ Deploy the `frontend/` directory as the Vercel project root.
 Required environment variable:
 
 ```text
-NEXT_PUBLIC_API_URL=https://your-tripwire-api.example.com
+NEXT_PUBLIC_API_URL=https://tripwire-api-4ecd.onrender.com
 ```
 
 Use the deployed backend URL without a trailing slash. The frontend reads this value at build time. If it is missing, the app displays a clear API configuration error instead of silently using localhost.
@@ -53,7 +58,7 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 Required environment variables:
 
 ```text
-ALLOWED_ORIGINS=https://your-vercel-frontend.example.com
+ALLOWED_ORIGINS=https://tripwire-eta.vercel.app
 ALLOW_ORIGIN_REGEX=
 MODEL_PATH=/opt/render/project/src/backend/models
 DATA_PATH=/opt/render/project/src/backend/data
@@ -136,7 +141,7 @@ ALLOW_ORIGIN_REGEX=http://(localhost|127\.0\.0\.1):30\d{2}
 For production:
 
 ```text
-ALLOWED_ORIGINS=https://your-vercel-frontend.example.com
+ALLOWED_ORIGINS=https://tripwire-eta.vercel.app
 ALLOW_ORIGIN_REGEX=
 ```
 
@@ -148,7 +153,8 @@ After the frontend is deployed, update the backend CORS variable with the exact 
 - Browser blocks API calls: add the deployed frontend URL to `ALLOWED_ORIGINS` on the backend.
 - `/ready` returns model failure: verify all files under `backend/models/` are deployed and `MODEL_PATH` points to that folder.
 - Backend starts locally but not hosted: confirm the platform supplies `$PORT` and the start command uses it.
-- Recommendations feel slow: mitigation evaluates multiple simulator candidates; this is expected to be slower than grid, prediction, or cascade requests.
+- Recommendations feel slow: mitigation evaluates ten simulator candidates by default and is expected to be slower than grid, prediction, or cascade requests.
+- The first request takes up to a minute: the Render free instance is waking from inactivity.
 
 ## Pre-Deployment Checks
 
