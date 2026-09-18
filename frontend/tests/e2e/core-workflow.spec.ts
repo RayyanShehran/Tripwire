@@ -10,8 +10,15 @@ test("core cascade, replay, mitigation, and reset workflow", async ({ page }) =>
   await page.getByRole("combobox", { name: "Preset" }).selectOption({
     label: "Mitigation Example",
   });
+  await expect(page.locator(".header-scenario")).toContainText("Mitigation Example");
   await expect(page.getByText("500.0 MW", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Stressed", { exact: true }).first()).toBeVisible();
+
+  await page.getByText("Operating conditions", { exact: true }).click();
+  await page.getByRole("combobox", { name: "Load multiplier" }).selectOption("1.5");
+  await expect(page.locator(".header-scenario")).toContainText("Custom Scenario");
+  await page.getByRole("combobox", { name: "Preset" }).selectOption({ label: "Mitigation Example" });
+  await expect(page.locator(".header-scenario")).toContainText("Mitigation Example");
 
   await page.getByRole("button", { name: "Predict Risk" }).click();
   await expect(page.getByRole("heading", { name: "Risk prediction" })).toBeVisible();
@@ -47,6 +54,28 @@ test("core cascade, replay, mitigation, and reset workflow", async ({ page }) =>
   await expect(page.getByText("None selected")).toBeVisible();
   await expect(page.getByText("400.0 MW", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Cascade timeline" })).toHaveCount(0);
+});
+
+test("component inspection is local and keeps the React Flow viewport stable", async ({ page }) => {
+  let gridRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/grid") gridRequests += 1;
+  });
+  await page.goto("/");
+  await expect(page.getByText("API connected")).toBeVisible();
+  await expect(page.locator(".grid-node").first()).toBeVisible();
+  const initialGridRequests = gridRequests;
+  const viewport = page.locator(".react-flow__viewport");
+  const transformBefore = await viewport.getAttribute("style");
+  const nodes = page.locator(".react-flow__node");
+  const count = await nodes.count();
+  for (let index = 0; index < 10; index += 1) {
+    await nodes.nth(index % count).click();
+  }
+  await expect(page.getByRole("tabpanel").getByRole("heading")).not.toHaveText("No component selected");
+  await expect(page.getByText("Loading network")).toHaveCount(0);
+  expect(gridRequests).toBe(initialGridRequests);
+  expect(await viewport.getAttribute("style")).toBe(transformBefore);
 });
 
 for (const viewport of [

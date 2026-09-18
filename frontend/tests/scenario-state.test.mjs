@@ -9,12 +9,14 @@ const exportsObject = {};
 new Function("exports", compiled.outputText)(exportsObject);
 const { initialScenario, matchingScenarioPreset, scenarioDisplayName, scenarioReducer, operatingConditions } = exportsObject;
 
-const presets = [{
-  id: "severe-cascade",
-  name: "Severe Cascade",
+const sharedDemoConfiguration = {
   initial_failure: { component_type: "line", component_id: "line-101" },
-  operating_condition: operatingConditions.severe,
-}];
+  operating_condition: operatingConditions.critical,
+};
+const presets = [
+  { id: "severe-cascade", name: "Severe Cascade", ...sharedDemoConfiguration },
+  { id: "mitigation-example", name: "Mitigation Example", ...sharedDemoConfiguration },
+];
 
 const original = { scenario_id: "scenario-a", final_metrics: { load_lost_percent: 100 } };
 const mitigated = { scenario_id: "scenario-a", final_metrics: { load_lost_percent: 5 } };
@@ -80,16 +82,74 @@ test("mismatched fingerprints cannot mix comparison results", () => {
   assert.equal(scenarioReducer(state, { type: "prediction", result: { scenario_id: "other" }, revision: 0 }), state);
 });
 
-test("scenario name follows the exact current configuration", () => {
+test("explicit preset identity wins when configurations are identical", () => {
   const presetInput = {
     presetId: "severe-cascade",
-    profile: "severe",
-    condition: operatingConditions.severe,
+    profile: "critical",
+    condition: operatingConditions.critical,
     component: { component_type: "line", component_id: "line-101" },
   };
   assert.equal(matchingScenarioPreset(presetInput, presets)?.id, "severe-cascade");
   assert.equal(scenarioDisplayName(presetInput, presets), "Severe Cascade");
-  assert.equal(scenarioDisplayName({ ...presetInput, condition: { ...presetInput.condition, load_multiplier: 1.25 } }, presets), "Custom Scenario");
-  assert.equal(scenarioDisplayName({ ...presetInput, component: { component_type: "line", component_id: "line-102" } }, presets), "Custom Scenario");
+  assert.equal(scenarioDisplayName({ ...presetInput, presetId: "mitigation-example" }, presets), "Mitigation Example");
+});
+
+test("manual edits make a named preset custom", () => {
+  const input = {
+    presetId: null,
+    profile: "critical",
+    condition: { ...operatingConditions.critical, load_multiplier: 1.5 },
+    component: { component_type: "line", component_id: "line-101" },
+  };
+  assert.equal(matchingScenarioPreset(input, presets), null);
+  assert.equal(scenarioDisplayName(input, presets), "Custom Scenario");
+});
+
+test("clearing results preserves explicit preset identity", () => {
+  const input = {
+    presetId: "mitigation-example",
+    profile: "critical",
+    condition: operatingConditions.critical,
+    component: { component_type: "line", component_id: "line-101" },
+  };
+  let state = scenarioReducer(initialScenario(), { type: "configure", input });
+  state = scenarioReducer(state, { type: "baseline", result: { nodes: [], lines: [], metrics: {} }, revision: 1 });
+  const cleared = scenarioReducer(state, { type: "clear-results" });
+  assert.equal(cleared.input.presetId, "mitigation-example");
+  assert.equal(scenarioDisplayName(cleared.input, presets), "Mitigation Example");
+  assert.equal(cleared.baseline, state.baseline);
+});
+
+test("loading another preset replaces the old identity", () => {
+  const mitigation = {
+    presetId: "mitigation-example", profile: "critical",
+    condition: operatingConditions.critical,
+    component: { component_type: "line", component_id: "line-101" },
+  };
+  const severe = { ...mitigation, presetId: "severe-cascade" };
+  const state = scenarioReducer(
+    scenarioReducer(initialScenario(), { type: "configure", input: mitigation }),
+    { type: "configure", input: severe },
+  );
+  assert.equal(scenarioDisplayName(state.input, presets), "Severe Cascade");
+});
+
+test("preparing a newly inspected component preserves the grid but invalidates results", () => {
+  const baseline = { nodes: [], lines: [], metrics: {} };
+  let state = completedScenario();
+  state = { ...state, baseline, input: { ...state.input, presetId: "mitigation-example" } };
+  const prepared = scenarioReducer(state, {
+    type: "prepare",
+    component: { component_type: "line", component_id: "line-402" },
+  });
+  assert.equal(prepared.baseline, baseline);
+  assert.equal(prepared.input.presetId, null);
+  assert.equal(prepared.input.component.component_id, "line-402");
+  assert.equal(prepared.originalCascadeResult, null);
+  assert.equal(prepared.recommendations, null);
+  assert.equal(prepared.revision, state.revision + 1);
+});
+
+test("baseline network retains its special label", () => {
   assert.equal(scenarioDisplayName(initialScenario().input, presets), "Baseline network");
 });
