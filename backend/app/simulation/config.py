@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any
 
+from app.simulation.definition import GridDefinition, build_network_from_definition
 from app.simulation.grid import GridComponentType, create_test_grid
 
 DEFAULT_SCENARIO_SEED = 42
@@ -76,19 +77,26 @@ def validate_scenario_config(config: ScenarioConfig) -> None:
         raise ValueError(f"Unsupported dispatch profile: {config.dispatch_profile}")
 
 
-def build_scenario_network(config: ScenarioConfig) -> Any:
+def build_scenario_network(
+    config: ScenarioConfig,
+    definition: GridDefinition | None = None,
+) -> Any:
     validate_scenario_config(config)
-    net = create_test_grid()
+    net = build_network_from_definition(definition) if definition is not None else create_test_grid()
     net.load.loc[:, "p_mw"] = net.load["p_mw"] * config.load_multiplier
     net.load.loc[:, "q_mvar"] = net.load["q_mvar"] * config.load_multiplier
 
     factors = DISPATCH_FACTORS[config.dispatch_profile]
-    net.ext_grid.loc[:, "max_p_mw"] = SLACK_CAPACITY_MW * config.generation_multiplier
+    if "max_p_mw" in net.ext_grid:
+        net.ext_grid.loc[:, "max_p_mw"] = net.ext_grid["max_p_mw"] * config.generation_multiplier
+    else:
+        net.ext_grid.loc[:, "max_p_mw"] = SLACK_CAPACITY_MW * config.generation_multiplier
     for generator_index, generator in net.gen.iterrows():
         generator_id = str(generator["tripwire_id"])
-        factor = config.generation_multiplier * factors[generator_id]
+        factor = config.generation_multiplier * factors.get(generator_id, 1.0)
         net.gen.loc[generator_index, "p_mw"] = float(generator["p_mw"]) * factor
-        net.gen.loc[generator_index, "max_p_mw"] = GENERATOR_CAPACITY_MW[generator_id] * factor
+        base_capacity = float(generator.get("max_p_mw", GENERATOR_CAPACITY_MW.get(generator_id, generator["p_mw"])))
+        net.gen.loc[generator_index, "max_p_mw"] = base_capacity * factor
 
     net.line.loc[:, "max_i_ka"] = net.line["max_i_ka"] * config.line_rating_multiplier
     original_demand = float(net.load["p_mw"].sum()) if not net.load.empty else 0.0

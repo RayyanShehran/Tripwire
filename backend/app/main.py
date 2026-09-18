@@ -17,6 +17,12 @@ from app.ml.inference import (
     predict_from_config,
 )
 from app.simulation.config import ScenarioConfig, scenario_config, build_scenario_network
+from app.simulation.definition import (
+    BUILTIN_GRID_DEFINITION,
+    GridDefinition,
+    GridValidationResult,
+    validate_grid_definition,
+)
 from app.simulation.cascade import DEFAULT_MAX_CASCADE_STEPS, simulate_cascade
 from app.simulation.grid import (
     GridComponentNotFoundError,
@@ -96,6 +102,14 @@ class RecommendationRequest(ScenarioRequest):
     top_n: int = Field(default=3, ge=1, le=5)
 
 
+class GridDefinitionRequest(BaseModel):
+    grid_definition: GridDefinition
+
+
+class GridSolveRequest(GridDefinitionRequest):
+    operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -144,6 +158,41 @@ def get_grid(condition: OperatingCondition = Depends()) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     finally:
         logger.info("grid baseline completed elapsed_ms=%.2f", _elapsed_ms(start))
+
+
+@app.get("/api/grid/definition")
+def get_grid_definition() -> dict:
+    return {
+        "schema_version": 1,
+        "grid_definition": BUILTIN_GRID_DEFINITION.model_dump(mode="json"),
+        "ml_compatible": True,
+    }
+
+
+@app.post("/api/grid/validate", response_model=GridValidationResult)
+def validate_custom_grid(request: GridDefinitionRequest) -> GridValidationResult:
+    return validate_grid_definition(request.grid_definition)
+
+
+@app.post("/api/grid/solve")
+def solve_custom_grid(request: GridSolveRequest) -> dict:
+    validation = validate_grid_definition(request.grid_definition)
+    if not validation.valid:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Grid definition is invalid", **validation.model_dump(mode="json")},
+        )
+    try:
+        config = scenario_config("line", request.grid_definition.lines[0].id if request.grid_definition.lines else "none", request.operating_condition.model_dump())
+        net = build_scenario_network(config, request.grid_definition)
+        run_power_flow(net)
+        return {
+            "grid": serialize_grid_state(net),
+            "validation": validation.model_dump(mode="json"),
+            "ml_compatible": request.grid_definition.id == BUILTIN_GRID_DEFINITION.id,
+        }
+    except GridConvergenceError as exc:
+        raise HTTPException(status_code=422, detail={"message": str(exc), "validation": validation.model_dump(mode="json")}) from exc
 
 
 @app.get("/api/demo-presets")

@@ -7,6 +7,11 @@ from app.simulation.definition import (
     validate_grid_definition,
 )
 from app.simulation.grid import run_power_flow, serialize_grid_state
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
 
 
 def definition_copy(**updates) -> GridDefinition:
@@ -58,3 +63,57 @@ def test_builtin_definition_is_valid_and_solves() -> None:
     net = build_network_from_definition(BUILTIN_GRID_DEFINITION)
     run_power_flow(net)
     assert net.converged
+
+
+def test_validation_reports_duplicate_ids_and_bad_references() -> None:
+    payload = deepcopy(BUILTIN_GRID_DEFINITION.model_dump())
+    payload["loads"][0]["id"] = payload["buses"][0]["id"]
+    payload["loads"][0]["bus_id"] = "missing-bus"
+    result = validate_grid_definition(GridDefinition.model_validate(payload))
+
+    assert not result.valid
+    assert {issue.code for issue in result.errors} >= {"duplicate_id", "missing_bus_reference"}
+
+
+def test_validation_reports_invalid_line_and_generator() -> None:
+    payload = deepcopy(BUILTIN_GRID_DEFINITION.model_dump())
+    payload["lines"][0]["target_bus_id"] = payload["lines"][0]["source_bus_id"]
+    payload["lines"][0]["capacity_mw"] = -1
+    payload["generators"][1]["setpoint_mw"] = payload["generators"][1]["max_mw"] + 1
+    result = validate_grid_definition(GridDefinition.model_validate(payload))
+
+    assert not result.valid
+    assert {issue.code for issue in result.errors} >= {"self_loop", "not_positive", "invalid_generator_limits"}
+
+
+def test_islanded_grid_is_valid_with_warning() -> None:
+    payload = deepcopy(BUILTIN_GRID_DEFINITION.model_dump())
+    payload["lines"] = [line for line in payload["lines"] if "bus-3" not in (line["source_bus_id"], line["target_bus_id"])]
+    result = validate_grid_definition(GridDefinition.model_validate(payload))
+
+    assert result.valid
+    assert result.island_count == 2
+    assert any(issue.code == "unsupplied_island" for issue in result.warnings)
+
+
+def test_grid_validation_and_solve_api() -> None:
+    definition = BUILTIN_GRID_DEFINITION.model_dump(mode="json")
+    validation = client.post("/api/grid/validate", json={"grid_definition": definition})
+    solve = client.post("/api/grid/solve", json={"grid_definition": definition})
+
+    assert validation.status_code == 200
+    assert validation.json()["valid"] is True
+    assert solve.status_code == 200
+    assert solve.json()["grid"]["metrics"]["served_load_mw"] == 400
+    assert solve.json()["ml_compatible"] is True
+
+
+def test_solve_api_rejects_invalid_definition_with_structured_errors() -> None:
+    definition = deepcopy(BUILTIN_GRID_DEFINITION.model_dump(mode="json"))
+    definition["loads"][0]["bus_id"] = "missing"
+    response = client.post("/api/grid/solve", json={"grid_definition": definition})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["valid"] is False
+    assert detail["errors"][0]["component_id"] == "load-east"
