@@ -1,4 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function visibleLabelNodeCollisions(page: Page) {
+  return page.evaluate(() => {
+    const labels = [...document.querySelectorAll<HTMLElement>(".edge-label")];
+    const nodes = [...document.querySelectorAll<HTMLElement>(".react-flow__node")];
+    return labels.reduce((count, label) => count + nodes.filter((node) => {
+      const a = label.getBoundingClientRect();
+      const b = node.getBoundingClientRect();
+      return a.left < b.right - 2 && a.right > b.left + 2 && a.top < b.bottom - 2 && a.bottom > b.top + 2;
+    }).length, 0);
+  });
+}
 
 test("core cascade, replay, mitigation, and reset workflow", async ({ page }) => {
   await page.goto("/");
@@ -13,6 +25,7 @@ test("core cascade, replay, mitigation, and reset workflow", async ({ page }) =>
   await expect(page.locator(".header-scenario")).toContainText("Mitigation Example");
   await expect(page.getByText("500.0 MW", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Stressed", { exact: true }).first()).toBeVisible();
+  expect(await visibleLabelNodeCollisions(page)).toBe(0);
 
   await page.getByText("Operating conditions", { exact: true }).click();
   await page.getByRole("combobox", { name: "Load multiplier" }).selectOption("1.5");
@@ -30,6 +43,7 @@ test("core cascade, replay, mitigation, and reset workflow", async ({ page }) =>
   await expect(blackoutStep).toBeVisible();
   await blackoutStep.click();
   await expect(page.getByText("Blackout", { exact: true }).first()).toBeVisible();
+  expect(await visibleLabelNodeCollisions(page)).toBe(0);
 
   const replay = page.getByRole("button", { name: "Replay" });
   await expect(replay).toBeEnabled();
@@ -49,6 +63,7 @@ test("core cascade, replay, mitigation, and reset workflow", async ({ page }) =>
   await expect(page.getByText("Improvement", { exact: true })).toBeVisible();
   await expect(page.getByText("25.0 MW", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("95.0 percentage points", { exact: true })).toBeVisible();
+  expect(await visibleLabelNodeCollisions(page)).toBe(0);
 
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(page.getByText("Healthy", { exact: true }).first()).toBeVisible();
@@ -130,6 +145,35 @@ test("grid layout can be unlocked, persisted, and reset without network refetche
   await expect.poll(() => page.evaluate(() => localStorage.getItem("tripwire:grid-layout:v1"))).toBeNull();
   await expect.poll(() => restoredNode.evaluate((element) => (element as HTMLElement).style.transform)).toBe(initialTransform);
   expect(gridRequests).toBeGreaterThanOrEqual(initialGridRequests);
+});
+
+test("grid display controls reduce label density without refetching", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  let gridRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/grid") gridRequests += 1;
+  });
+  await page.goto("/");
+  await expect(page.getByText("API connected")).toBeVisible();
+  await page.getByRole("button", { name: "Zoom In" }).click();
+  await page.getByRole("button", { name: "Zoom In" }).click();
+  await expect(page.locator(".edge-label-id").first()).toBeVisible();
+  const initialGridRequests = gridRequests;
+
+  await page.getByText("Display", { exact: true }).click();
+  await page.getByLabel("Line IDs").uncheck();
+  await expect(page.locator(".edge-label-id")).toHaveCount(0);
+
+  await page.getByLabel("Line loading").uncheck();
+  await expect(page.locator(".edge-label")).toHaveCount(0);
+
+  await page.getByLabel("Electrical values").uncheck();
+  await expect(page.locator(".node-reading-value")).toHaveCount(0);
+
+  await page.getByLabel("Status text").uncheck();
+  await expect(page.locator(".node-status")).toHaveCount(0);
+  expect(gridRequests).toBe(initialGridRequests);
+  await expect(page.getByText("Loading network")).toHaveCount(0);
 });
 
 for (const viewport of [
