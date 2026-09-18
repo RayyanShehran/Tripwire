@@ -190,7 +190,7 @@ def solve_custom_grid(request: GridSolveRequest) -> dict:
         return {
             "grid": serialize_grid_state(net),
             "validation": validation.model_dump(mode="json"),
-            "ml_compatible": request.grid_definition.id == BUILTIN_GRID_DEFINITION.id,
+            "ml_compatible": _is_builtin_grid(request.grid_definition),
         }
     except GridConvergenceError as exc:
         raise HTTPException(status_code=422, detail={"message": str(exc), "validation": validation.model_dump(mode="json")}) from exc
@@ -275,7 +275,7 @@ def predict_risk(request: PredictionRequest) -> dict:
     start = perf_counter()
     config = _scenario_config_from_request(request)
     try:
-        if request.grid_definition is not None and request.grid_definition.id != BUILTIN_GRID_DEFINITION.id:
+        if request.grid_definition is not None and not _is_builtin_grid(request.grid_definition):
             raise PredictionInputError("Current prediction model was trained on the built-in Tripwire network and is unavailable for modified topology")
         return predict_from_config(
             config,
@@ -324,6 +324,10 @@ def recommend_actions(request: RecommendationRequest) -> dict:
 
 def _elapsed_ms(start: float) -> float:
     return (perf_counter() - start) * 1000
+
+
+def _is_builtin_grid(definition: GridDefinition) -> bool:
+    return definition.model_dump(mode="json") == BUILTIN_GRID_DEFINITION.model_dump(mode="json")
 
 
 def _scenario_config_from_request(request: ScenarioRequest) -> ScenarioConfig:

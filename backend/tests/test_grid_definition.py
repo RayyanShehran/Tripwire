@@ -158,7 +158,7 @@ def test_custom_network_runs_failure_cascade_and_mitigation() -> None:
 
 def test_prediction_rejects_modified_topology_truthfully() -> None:
     definition = deepcopy(BUILTIN_GRID_DEFINITION.model_dump(mode="json"))
-    definition["id"] = "modified-grid"
+    definition["loads"][0]["demand_mw"] += 1
     response = client.post("/api/predict", json={
         "component_type": "line", "component_id": "line-101", "grid_definition": definition,
     })
