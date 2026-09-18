@@ -45,7 +45,7 @@ export function createDefaultLayout(nodes: Array<{ id: string; type?: string }>)
     const index = unknownByType.get(type) ?? 0;
     unknownByType.set(type, index + 1);
     positions[node.id] = {
-      x: 1050 + (index % 3) * 270,
+      x: 810 + (index % 3) * 270,
       y: (fallbackRows[type] ?? 360) + Math.floor(index / 3) * 180,
     };
   }

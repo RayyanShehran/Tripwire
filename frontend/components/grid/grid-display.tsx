@@ -6,6 +6,7 @@ export type GridDisplayOptions = {
   showLineLoading: boolean;
   showElectricalValues: boolean;
   showStatusText: boolean;
+  compactNodeMode: boolean;
 };
 
 export const defaultGridDisplayOptions: GridDisplayOptions = {
@@ -13,6 +14,7 @@ export const defaultGridDisplayOptions: GridDisplayOptions = {
   showLineLoading: true,
   showElectricalValues: true,
   showStatusText: true,
+  compactNodeMode: false,
 };
 
 const GridDisplayContext = createContext(defaultGridDisplayOptions);

@@ -7,8 +7,9 @@ import { useGridDisplayOptions } from "./grid-display";
 
 type GridNodeProps = NodeProps & { data: GridNodeData };
 function NodeShell({ data }: { data: GridNodeData }) {
-  const compact = useStore((state) => state.transform[2] < 0.62);
+  const zoomCompact = useStore((state) => state.transform[2] < 0.62);
   const display = useGridDisplayOptions();
+  const compact = zoomCompact || display.compactNodeMode;
   const Icon = data.type === "Generator" ? Factory : data.type === "Load" ? PlugZap : UtilityPole;
   const status = data.isUnsupplied ? "Unsupplied" : data.status;
   const StatusIcon = status === "Failed" ? X : status === "Unsupplied" ? Unplug : TriangleAlert;

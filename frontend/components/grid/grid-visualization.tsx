@@ -6,7 +6,7 @@ import "@xyflow/react/dist/style.css";
 import { CircleCheck, CircleX, Network, RotateCcw, LoaderCircle } from "lucide-react";
 import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel, type PanelTab, type ActiveAction, type MitigationRecommendation, type MitigationResult, type OperatingProfileKey, type RiskPrediction } from "./info-panel";
-import { fetchGrid, fetchDemoPresets, findMitigations, predictRisk, runCascade, simulateFailure, type ApiComponentType, type ApiDemoPreset, type ApiMitigationRecommendation, type ApiMitigationResponse, type ApiOperatingCondition, type ApiPredictionResponse } from "./api";
+import { fetchGrid, fetchDemoPresets, fetchGridDefinition, findMitigations, predictRisk, runCascade, simulateFailure, solveGridDefinition, validateGridDefinition, type ApiComponentType, type ApiDemoPreset, type ApiMitigationRecommendation, type ApiMitigationResponse, type ApiOperatingCondition, type ApiPredictionResponse, type GridDefinition, type GridValidation } from "./api";
 import { initialScenario, scenarioDisplayName, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
@@ -19,6 +19,8 @@ import { defaultGridDisplayOptions, GridDisplayProvider, type GridDisplayOptions
 import { StatusBadge } from "../ui/status-badge";
 import { ActionButton } from "../ui/action-button";
 import type { GridNode, SelectedGridElement } from "./types";
+import { GridEditorPanel } from "./grid-editor-panel";
+import { commitHistory, createHistory, createScenarioDocument, draftGrid, localValidation, parseScenarioDocument, readDraft, readPresets, redoHistory, writeDraft, writePresets, undoHistory, type EditorHistory, type ScenarioDocument } from "./grid-editor-state";
 const nodeTypes = { generator: GeneratorNode, bus: BusNode, load: LoadNode };
 const edgeTypes = { transmissionLine: TransmissionLine };
 
@@ -39,6 +41,15 @@ export function GridVisualization() {
   const [selectedComponent, setSelectedComponent] = useState<ScenarioInput["component"]>(null);
   const [layoutLocked, setLayoutLocked] = useState(true);
   const [displayOptions, setDisplayOptions] = useState(defaultGridDisplayOptions);
+  const [builtinDefinition, setBuiltinDefinition] = useState<GridDefinition | null>(null);
+  const [analysisDefinition, setAnalysisDefinition] = useState<GridDefinition | null>(null);
+  const [editorHistory, setEditorHistory] = useState<EditorHistory | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [validation, setValidation] = useState<GridValidation>({ valid: true, errors: [], warnings: [], island_count: 1 });
+  const [userPresets, setUserPresets] = useState<ScenarioDocument[]>([]);
+  const [activeGridPresetId, setActiveGridPresetId] = useState<string | null>(null);
+  const [mlCompatible, setMlCompatible] = useState(true);
   const {
     load_multiplier: loadMultiplier,
     generation_multiplier: generationMultiplier,
@@ -46,9 +57,15 @@ export function GridVisualization() {
     dispatch_profile: dispatchProfile,
   } = scenario.input.condition;
   const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
-  const grid = currentCascadeStep?.grid
+  const analyzedGrid = currentCascadeStep?.grid
     ?? (scenario.view === "failure" ? scenario.failure?.grid : null)
     ?? scenario.baseline;
+  const editorDefinition = editorHistory?.present.definition;
+  const editorDraftGrid = useMemo(
+    () => editMode && editorDefinition ? draftGrid(editorDefinition) : null,
+    [editMode, editorDefinition],
+  );
+  const grid = editorDraftGrid ?? analyzedGrid;
   const isLoading = !grid && !errorMessage;
   const failedIds = useMemo(() => cascadeResult
     ? cascadeResult.steps.slice(0, currentStepIndex + 1).flatMap((step) => step.newly_failed_components.map((item) => item.component_id))
@@ -81,6 +98,24 @@ export function GridVisualization() {
 
   useEffect(() => {
     let active = true;
+    fetchGridDefinition(apiBaseUrl).then((definition) => {
+      if (!active) return;
+      setBuiltinDefinition(definition);
+      setErrorMessage(null);
+      const restored = readDraft(window.localStorage);
+      setEditorHistory(createHistory(restored?.grid_definition ?? definition, restored?.visual_layout.positions ?? {}));
+      setEditorDirty(Boolean(restored));
+      if (restored) {
+        setDisplayOptions(restored.display_options);
+        setValidation(localValidation(restored.grid_definition));
+      }
+      setUserPresets(readPresets(window.localStorage));
+    }).catch((error: unknown) => setErrorMessage(error instanceof Error ? error.message : "Unable to load the editable grid model"));
+    return () => { active = false; };
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    let active = true;
     const check = async () => {
       try {
         const response = await fetch(`${apiBaseUrl}/health`, { signal: AbortSignal.timeout(5000), cache: "no-store" });
@@ -100,7 +135,11 @@ export function GridVisualization() {
     }
     const currentNodes = nodesRef.current;
     const selectedNodes = new Map(currentNodes.map((node) => [node.id, node.selected]));
-    const mergedNodes = mergeLayoutPositions(flowData.nodes, currentNodes, savedPositionsRef.current)
+    const mergedNodes = mergeLayoutPositions(
+      flowData.nodes,
+      editMode ? [] : currentNodes,
+      editMode ? editorHistory?.present.positions ?? {} : savedPositionsRef.current,
+    )
       .map((node) => ({ ...node, selected: selectedNodes.get(node.id) ?? false }));
     nodesRef.current = mergedNodes;
     setNodes(mergedNodes);
@@ -109,7 +148,7 @@ export function GridVisualization() {
       return routeFlowEdges(mergedNodes, flowData.edges)
         .map((edge) => ({ ...edge, selected: selectedEdges.get(edge.id) ?? false }));
     });
-  }, [flowData, setNodes, setEdges]);
+  }, [flowData, setNodes, setEdges, editMode, editorHistory?.present.positions]);
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -141,13 +180,16 @@ export function GridVisualization() {
       line_rating_multiplier: lineRatingMultiplier,
       dispatch_profile: dispatchProfile,
     };
-    fetchGrid(apiBaseUrl, condition).then((result) => {
+    const request = analysisDefinition
+      ? solveGridDefinition(apiBaseUrl, analysisDefinition, condition).then((result) => result.grid)
+      : fetchGrid(apiBaseUrl, condition);
+    request.then((result) => {
       if (active) dispatch({ type: "baseline", result, condition });
     }).catch((error: unknown) => {
       if (active) setErrorMessage(error instanceof Error ? error.message : "Unable to load scenario");
     });
     return () => { active = false; };
-  }, [apiBaseUrl, loadMultiplier, generationMultiplier, lineRatingMultiplier, dispatchProfile]);
+  }, [apiBaseUrl, loadMultiplier, generationMultiplier, lineRatingMultiplier, dispatchProfile, analysisDefinition]);
 
   useEffect(() => {
     if (!isPlaying || !cascadeResult) return;
@@ -194,10 +236,161 @@ export function GridVisualization() {
     setErrorMessage(null);
   }, []);
 
+  const editorPositions = useCallback(() => Object.fromEntries(nodesRef.current.map((node) => [node.id, { ...node.position }])), []);
+
+  const enterEditMode = useCallback(() => {
+    if (!builtinDefinition) return;
+    const definition = editorHistory?.present.definition ?? analysisDefinition ?? builtinDefinition;
+    setEditorHistory(createHistory(definition, editorHistory?.present.positions ?? editorPositions()));
+    setValidation(localValidation(definition));
+    setEditMode(true);
+    setLayoutLocked(false);
+    setIsPlaying(false);
+  }, [analysisDefinition, builtinDefinition, editorHistory, editorPositions]);
+
+  const updateEditorDefinition = useCallback((definition: GridDefinition) => {
+    setEditorHistory((current) => commitHistory(current ?? createHistory(definition), {
+      definition, positions: current?.present.positions ?? editorPositions(),
+    }));
+    setValidation(localValidation(definition));
+    setEditorDirty(true);
+    dispatch({ type: "clear-results" });
+    setCurrentStepIndex(0);
+    setIsPlaying(false);
+  }, [editorPositions]);
+
+  const handleValidateGrid = useCallback(async () => {
+    if (!editorHistory) return;
+    setActiveAction("reset");
+    try {
+      const result = await validateGridDefinition(apiBaseUrl, editorHistory.present.definition);
+      setValidation(result);
+      setErrorMessage(null);
+    } catch (error) { setErrorMessage(error instanceof Error ? error.message : "Unable to validate grid"); }
+    finally { setActiveAction(null); }
+  }, [apiBaseUrl, editorHistory]);
+
+  const handleApplyGrid = useCallback(async () => {
+    if (!editorHistory) return;
+    setActiveAction("reset");
+    try {
+      const result = await solveGridDefinition(apiBaseUrl, editorHistory.present.definition, scenario.input.condition);
+      setValidation(result.validation);
+      const isBuiltin = Boolean(builtinDefinition && JSON.stringify(editorHistory.present.definition) === JSON.stringify(builtinDefinition));
+      setAnalysisDefinition(isBuiltin ? null : editorHistory.present.definition);
+      setMlCompatible(result.ml_compatible);
+      dispatch({ type: "clear-results" });
+      dispatch({ type: "baseline", result: result.grid, condition: scenario.input.condition });
+      setEditMode(false);
+      setLayoutLocked(true);
+      setEditorDirty(false);
+      window.localStorage.removeItem("tripwire:grid-editor:draft:v1");
+      setErrorMessage(null);
+    } catch (error) { setErrorMessage(error instanceof Error ? error.message : "Unable to solve grid"); }
+    finally { setActiveAction(null); }
+  }, [apiBaseUrl, builtinDefinition, editorHistory, scenario.input.condition]);
+
+  const handleCancelEdit = useCallback(() => {
+    if (editorDirty && !window.confirm("Discard unsaved grid changes?")) return;
+    const definition = analysisDefinition ?? builtinDefinition;
+    if (definition) setEditorHistory(createHistory(definition, editorPositions()));
+    setValidation(definition ? localValidation(definition) : validation);
+    setEditorDirty(false);
+    setEditMode(false);
+    setLayoutLocked(true);
+  }, [analysisDefinition, builtinDefinition, editorDirty, editorPositions, validation]);
+
+  const saveEditorPreset = useCallback(() => {
+    if (!editorHistory) return;
+    const current = userPresets.find((item) => item.id === activeGridPresetId);
+    const name = window.prompt("Scenario name", current?.name ?? editorHistory.present.definition.name);
+    if (!name?.trim()) return;
+    const document = current ? {
+      ...current, name: name.trim(), updated_at: new Date().toISOString(),
+      grid_definition: structuredClone(editorHistory.present.definition), operating_condition: structuredClone(scenario.input.condition),
+      visual_layout: { positions: structuredClone(editorHistory.present.positions), locked: layoutLocked }, display_options: structuredClone(displayOptions),
+    } : createScenarioDocument(name.trim(), editorHistory.present.definition, scenario.input.condition, editorHistory.present.positions, displayOptions, analysisDefinition?.id ?? builtinDefinition?.id ?? null);
+    const next = current ? userPresets.map((item) => item.id === current.id ? document : item) : [...userPresets, document];
+    setUserPresets(next); writePresets(window.localStorage, next); setActiveGridPresetId(document.id); setEditorDirty(false);
+  }, [activeGridPresetId, analysisDefinition, builtinDefinition, displayOptions, editorHistory, layoutLocked, scenario.input.condition, userPresets]);
+
+  const loadEditorPreset = useCallback((preset: ScenarioDocument) => {
+    if (editorDirty && !window.confirm("Discard unsaved changes and load this scenario?")) return;
+    setEditorHistory(createHistory(preset.grid_definition, preset.visual_layout.positions));
+    setDisplayOptions(preset.display_options); setValidation(localValidation(preset.grid_definition));
+    setActiveGridPresetId(preset.id); setEditorDirty(false); setSelectedComponent(null);
+  }, [editorDirty]);
+
+  const duplicateEditorPreset = useCallback((preset: ScenarioDocument) => {
+    const duplicate = { ...structuredClone(preset), id: `scenario-${Date.now()}`, name: `${preset.name} Copy`, source_preset: preset.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const next = [...userPresets, duplicate]; setUserPresets(next); writePresets(window.localStorage, next); loadEditorPreset(duplicate);
+  }, [loadEditorPreset, userPresets]);
+
+  const resetEditorToBuiltIn = useCallback(() => {
+    if (!builtinDefinition || (editorDirty && !window.confirm("Discard changes and restore the built-in grid?"))) return;
+    setEditorHistory(createHistory(builtinDefinition, createDefaultLayout(draftGrid(builtinDefinition).nodes)));
+    setValidation(localValidation(builtinDefinition)); setActiveGridPresetId(null); setEditorDirty(false); setSelectedComponent(null);
+  }, [builtinDefinition, editorDirty]);
+
+  const duplicateBuiltIn = useCallback(() => {
+    if (!builtinDefinition) return;
+    const duplicate = createScenarioDocument(`${builtinDefinition.name} Copy`, builtinDefinition, scenario.input.condition, createDefaultLayout(draftGrid(builtinDefinition).nodes), displayOptions, builtinDefinition.id);
+    const next = [...userPresets, duplicate]; setUserPresets(next); writePresets(window.localStorage, next); loadEditorPreset(duplicate);
+  }, [builtinDefinition, displayOptions, loadEditorPreset, scenario.input.condition, userPresets]);
+
+  const renameEditorPreset = useCallback((preset: ScenarioDocument) => {
+    const name = window.prompt("Rename scenario", preset.name); if (!name?.trim()) return;
+    const next = userPresets.map((item) => item.id === preset.id ? { ...item, name: name.trim(), updated_at: new Date().toISOString() } : item);
+    setUserPresets(next); writePresets(window.localStorage, next);
+  }, [userPresets]);
+
+  const deleteEditorPreset = useCallback((preset: ScenarioDocument) => {
+    if (!window.confirm(`Delete ${preset.name}?`)) return;
+    const next = userPresets.filter((item) => item.id !== preset.id); setUserPresets(next); writePresets(window.localStorage, next);
+    if (activeGridPresetId === preset.id) setActiveGridPresetId(null);
+  }, [activeGridPresetId, userPresets]);
+
+  const importScenario = useCallback(async (file: File) => {
+    try {
+      const document = parseScenarioDocument(await file.text());
+      setEditorHistory(createHistory(document.grid_definition, document.visual_layout.positions)); setDisplayOptions(document.display_options);
+      setValidation(localValidation(document.grid_definition)); setEditorDirty(true); setActiveGridPresetId(null); setErrorMessage(null);
+    } catch (error) { setErrorMessage(error instanceof Error ? error.message : "Invalid scenario file"); }
+  }, []);
+
+  const exportScenario = useCallback(() => {
+    if (!editorHistory) return;
+    const scenarioDocument = createScenarioDocument(editorHistory.present.definition.name, editorHistory.present.definition, scenario.input.condition, editorHistory.present.positions, displayOptions, activeGridPresetId);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(scenarioDocument, null, 2)], { type: "application/json" }));
+    const anchor = window.document.createElement("a"); anchor.href = url; anchor.download = "tripwire-scenario.json"; anchor.click(); URL.revokeObjectURL(url);
+  }, [activeGridPresetId, displayOptions, editorHistory, scenario.input.condition]);
+
+  useEffect(() => {
+    if (!editorDirty || !editorHistory || !builtinDefinition) return;
+    const timer = window.setTimeout(() => writeDraft(window.localStorage, createScenarioDocument("Autosaved Draft", editorHistory.present.definition, scenario.input.condition, editorHistory.present.positions, displayOptions, analysisDefinition?.id ?? builtinDefinition.id)), 300);
+    return () => window.clearTimeout(timer);
+  }, [analysisDefinition, builtinDefinition, displayOptions, editorDirty, editorHistory, scenario.input.condition]);
+
+  useEffect(() => {
+    if (!editMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") return;
+      event.preventDefault();
+      setEditorHistory((current) => current ? (event.shiftKey ? redoHistory(current) : undoHistory(current)) : current);
+      setEditorDirty(true);
+    };
+    window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editMode]);
+
   const runScenarioAction = useCallback(async (action: "predict" | "failure" | "cascade" | "mitigation") => {
     const component = selectedComponent ?? scenario.input.component;
     const { condition } = scenario.input;
-    if (!component || activeAction || !scenario.baseline) return;
+    if (!component || activeAction || !scenario.baseline || editMode) return;
+    if (action === "predict" && !mlCompatible) {
+      setErrorMessage("ML prediction is unavailable because the current model was trained on the built-in Tripwire network.");
+      setPanelTab("prediction");
+      return;
+    }
     const componentChanged = component.component_type !== scenario.input.component?.component_type ||
       component.component_id !== scenario.input.component?.component_id;
     const revision = scenario.revision + (componentChanged ? 1 : 0);
@@ -208,7 +401,7 @@ export function GridVisualization() {
     setIsPlaying(false);
     setErrorMessage(null);
     try {
-      const args = [apiBaseUrl, component.component_type, component.component_id, condition, presetId] as const;
+      const args = [apiBaseUrl, component.component_type, component.component_id, condition, presetId, analysisDefinition ?? undefined] as const;
       if (action === "predict") {
         dispatch({ type: "prediction", result: await predictRisk(...args), revision });
       } else if (action === "failure") {
@@ -225,7 +418,7 @@ export function GridVisualization() {
     } finally {
       setActiveAction(null);
     }
-  }, [activeAction, apiBaseUrl, scenario, selectedComponent]);
+  }, [activeAction, analysisDefinition, apiBaseUrl, editMode, mlCompatible, scenario, selectedComponent]);
 
   const handlePredictRisk = () => { void runScenarioAction("predict"); };
   const handleSimulateFailure = () => { void runScenarioAction("failure"); };
@@ -278,18 +471,23 @@ export function GridVisualization() {
     nodesRef.current = nextNodes;
     setNodes(nextNodes);
     setEdges((current) => routeFlowEdges(nextNodes, current));
-    if (persist) writeSavedLayout(window.localStorage, nextNodes);
-  }, [setNodes, setEdges]);
+    if (editMode) {
+      setEditorHistory((current) => current ? commitHistory(current, { definition: current.present.definition, positions }) : current);
+      setEditorDirty(true);
+    } else if (persist) writeSavedLayout(window.localStorage, nextNodes);
+  }, [editMode, setNodes, setEdges]);
 
   const handleAutoLayout = useCallback(() => {
     applyVisualLayout(createDefaultLayout(nodesRef.current), true);
   }, [applyVisualLayout]);
 
   const handleResetLayout = useCallback(() => {
-    clearSavedLayout(window.localStorage);
-    savedPositionsRef.current = {};
+    if (!editMode) {
+      clearSavedLayout(window.localStorage);
+      savedPositionsRef.current = {};
+    }
     applyVisualLayout(createDefaultLayout(nodesRef.current), false);
-  }, [applyVisualLayout]);
+  }, [applyVisualLayout, editMode]);
 
   const handleNodeDragStop = useCallback((node: GridNode) => {
     const nextNodes = nodesRef.current.map((item) => item.id === node.id
@@ -297,36 +495,49 @@ export function GridVisualization() {
     nodesRef.current = nextNodes;
     setNodes(nextNodes);
     setEdges((current) => routeFlowEdges(nextNodes, current));
-    writeSavedLayout(window.localStorage, nextNodes);
-  }, [setNodes, setEdges]);
+    if (editMode) {
+      setEditorHistory((current) => current ? commitHistory(current, {
+        definition: current.present.definition,
+        positions: Object.fromEntries(nextNodes.map((item) => [item.id, { ...item.position }])),
+      }) : current);
+      setEditorDirty(true);
+    } else writeSavedLayout(window.localStorage, nextNodes);
+  }, [editMode, setNodes, setEdges]);
 
   const handleDisplayOptionChange = useCallback((option: keyof GridDisplayOptions, value: boolean) => {
     setDisplayOptions((current) => ({ ...current, [option]: value }));
-  }, []);
+    if (editMode) setEditorDirty(true);
+  }, [editMode]);
 
   const system = systemState(grid, cascadeResult, currentStepIndex, activeAction === "cascade");
   const scenarioName = scenarioDisplayName(scenario.input, demoPresets);
   return <ReactFlowProvider>
     <header className="topbar">
       <Link className="brand" href="/" aria-label="Tripwire home"><Network aria-hidden="true" /><div><h1>TRIPWIRE</h1><p>Grid Cascade Intelligence</p></div></Link>
-      <div className="header-scenario"><span className="eyebrow">Scenario</span><span>{scenarioName}</span></div>
+      <div className="header-scenario"><span className="eyebrow">Scenario</span><span>{editMode ? "Editing draft" : activeGridPresetId ? userPresets.find((item) => item.id === activeGridPresetId)?.name ?? scenarioName : scenarioName}{editorDirty ? " *" : ""}</span></div>
       <div className="header-status" aria-live="polite"><span className="eyebrow">System</span><StatusBadge status={system} /></div>
       <div className="api-status" role="status">{apiStatus === "connected" ? <CircleCheck size={14} aria-hidden="true" /> : apiStatus === "checking" ? <LoaderCircle size={14} aria-hidden="true" /> : <CircleX size={14} aria-hidden="true" />}<span>API {apiStatus}</span></div>
       <ActionButton icon={<RotateCcw />} disabled={activeAction !== null} onClick={handleResetScenario} variant="ghost" title="Reset profile, selection, and results">Reset</ActionButton>
     </header>
     <main className="workspace">
-      <ScenarioControls activeAction={activeAction} input={scenario.input} selectedPresetId={scenario.input.presetId} selected={selected} presets={demoPresets}
+      {editMode && editorHistory ? <GridEditorPanel definition={editorHistory.present.definition} validation={validation} selected={selectedComponent} dirty={editorDirty}
+        canUndo={editorHistory.past.length > 0} canRedo={editorHistory.future.length > 0} presets={userPresets} activePresetId={activeGridPresetId}
+        onDefinitionChange={updateEditorDefinition} onUndo={() => { setEditorHistory((current) => current ? undoHistory(current) : current); setEditorDirty(true); }} onRedo={() => { setEditorHistory((current) => current ? redoHistory(current) : current); setEditorDirty(true); }}
+        onValidate={() => { void handleValidateGrid(); }} onApply={() => { void handleApplyGrid(); }} onCancel={handleCancelEdit} onSave={saveEditorPreset}
+        onLoadPreset={loadEditorPreset} onDuplicatePreset={duplicateEditorPreset} onRenamePreset={renameEditorPreset} onDeletePreset={deleteEditorPreset}
+        onImport={(file) => { void importScenario(file); }} onExport={exportScenario} builtInName={builtinDefinition?.name ?? "Tripwire Teaching Grid"} onResetBuiltIn={resetEditorToBuiltIn} onDuplicateBuiltIn={duplicateBuiltIn} /> : <ScenarioControls activeAction={activeAction} input={scenario.input} selectedPresetId={scenario.input.presetId} selected={selected} presets={demoPresets}
         onLoadPreset={handleLoadPreset} onProfileChange={handleOperatingProfileChange}
         onConditionChange={(condition) => configureScenario({ ...scenario.input, condition, presetId: null })}
-        onClear={() => selectComponent(null)} onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onCascade={handleRunCascade} onMitigation={handleFindMitigation} />
+        onClear={() => selectComponent(null)} onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onCascade={handleRunCascade} onMitigation={handleFindMitigation} mlPredictionAvailable={mlCompatible} />}
       <div className="workspace-center">
         <section className="network-frame" aria-label="Power network">
-          <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid} locked={layoutLocked} onAutoLayout={handleAutoLayout} onResetLayout={handleResetLayout} onToggleLock={() => setLayoutLocked((locked) => !locked)} displayOptions={displayOptions} onDisplayOptionChange={handleDisplayOptionChange} /></header>
+          <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{editMode ? "Draft topology" : scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid || editMode} locked={layoutLocked} onAutoLayout={handleAutoLayout} onResetLayout={handleResetLayout} onToggleLock={() => setLayoutLocked((locked) => !locked)} displayOptions={displayOptions} onDisplayOptionChange={handleDisplayOptionChange} onEditGrid={enterEditMode} /></header>
+          {editorDirty && !editMode && <div className="modified-banner" role="status">Grid modified — rerun analysis.</div>}
           {errorMessage && <div className="error-banner" role="alert">{errorMessage}<button className="button button-ghost icon-button" onClick={() => configureScenario({ ...scenario.input })} title="Retry loading the scenario" aria-label="Retry loading the scenario"><RotateCcw /></button></div>}
           <div className="network-canvas">
             {!grid ? <div className="state-message" role="status">{isLoading ? <LoaderCircle size={24} className="loading-icon" aria-hidden="true" /> : <CircleX size={24} aria-hidden="true" />}<h3>{isLoading ? "Loading network" : "Network unavailable"}</h3></div> :
               <GridDisplayProvider value={displayOptions}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .12 }} minZoom={.2} maxZoom={1.8}
-                nodesConnectable={false} nodesDraggable={!layoutLocked} snapToGrid snapGrid={[15, 15]} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+                nodesConnectable={false} nodesDraggable={editMode || !layoutLocked} snapToGrid snapGrid={[15, 15]} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
                 onNodeDragStop={(_, node) => handleNodeDragStop(node as GridNode)}
                 onNodeClick={(_, node) => selectComponent({ component_type: node.type as ApiComponentType, component_id: node.id })}
                 onEdgeClick={(_, edge) => { if (!edge.id.startsWith("connection-")) selectComponent({ component_type: "line", component_id: edge.id }); }}>
@@ -338,11 +549,11 @@ export function GridVisualization() {
         </section>
         <CascadeTimeline cascade={cascadeResult} currentStepIndex={currentStepIndex} isPlaying={isPlaying} onNextStep={handleNextStep} onPlaybackSpeedChange={setPlaybackSpeed} onPreviousStep={handlePreviousStep} onSelectStep={handleSelectStep} onTogglePlayback={handleTogglePlayback} playbackSpeed={playbackSpeed} />
       </div>
-      <InfoPanel tab={panelTab} onTabChange={setPanelTab} metrics={grid?.metrics ?? null} currentDepth={currentCascadeStep?.step ?? 0} busy={activeAction !== null}
+      <InfoPanel tab={panelTab} onTabChange={setPanelTab} metrics={grid?.metrics ?? null} currentDepth={currentCascadeStep?.step ?? 0} busy={activeAction !== null || editMode}
         originalCascadeSummary={originalCascadeResult ? { cascadeDepth: originalCascadeResult.cascade_depth, failedComponents: originalCascadeResult.final_metrics.failed_components, failedLines: originalCascadeResult.final_metrics.failed_lines, loadLostPercent: originalCascadeResult.final_metrics.load_lost_percent, terminationReason: originalCascadeResult.termination_reason } : null}
         mitigatedCascadeSummary={mitigatedCascadeResult ? { cascadeDepth: mitigatedCascadeResult.cascade_depth, failedComponents: mitigatedCascadeResult.final_metrics.failed_components, failedLines: mitigatedCascadeResult.final_metrics.failed_lines, loadLostPercent: mitigatedCascadeResult.final_metrics.load_lost_percent, terminationReason: mitigatedCascadeResult.termination_reason, controlledShedMw: mitigatedCascadeResult.final_metrics.controlled_shed_mw, involuntaryUnservedMw: mitigatedCascadeResult.final_metrics.involuntary_unserved_mw, totalUnservedMw: mitigatedCascadeResult.final_metrics.total_unserved_mw } : null}
         mitigation={mitigation} prediction={prediction} selected={selected} selectedMitigation={selectedMitigation}
-        onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onSimulateRecommendation={handleSimulateRecommendation} />
+        onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onSimulateRecommendation={handleSimulateRecommendation} mlPredictionAvailable={mlCompatible} />
     </main>
   </ReactFlowProvider>;
 }

@@ -88,6 +88,7 @@ type InfoPanelProps = {
   selectedMitigation: MitigationRecommendation | null;
   onPredict: () => void; onFailure: () => void;
   onSimulateRecommendation: (recommendation: MitigationRecommendation) => void;
+  mlPredictionAvailable?: boolean;
 };
 const tabs = [
   { id: "overview", label: "Overview", icon: BarChart3 },
@@ -118,7 +119,7 @@ export function InfoPanel(props: InfoPanelProps) {
         </div><dl className="detail-rows"><Row label="Generation" value={mw(metrics.total_generation_mw)} /><Row label="Failed lines" value={String(metrics.failed_lines)} /><Row label="Failed components" value={String(metrics.failed_components)} /><Row label="Controlled shed" value={mw(metrics.controlled_shed_mw)} /><Row label="Involuntary unserved" value={mw(metrics.involuntary_unserved_mw)} /></dl></> : <EmptyState text="No grid data available" />}
       </>}
       {tab === "prediction" && <><PanelHeading title="Risk prediction" subtitle="Model estimate / pre-failure" />
-        {prediction ? <><div className="risk-value"><span className="eyebrow">Cascade risk</span><strong>{(prediction.cascadeProbability * 100).toFixed(0)}<small>%</small></strong><span className="badge">{prediction.riskLevel}</span></div>
+        {!props.mlPredictionAvailable ? <EmptyState text="Unavailable for modified topology. The current model was trained on the built-in Tripwire network." /> : prediction ? <><div className="risk-value"><span className="eyebrow">Cascade risk</span><strong>{(prediction.cascadeProbability * 100).toFixed(0)}<small>%</small></strong><span className="badge">{prediction.riskLevel}</span></div>
           <ProgressMeter label="Cascade probability" value={prediction.cascadeProbability * 100} />
           <dl className="detail-rows"><Row label="Estimated load loss" value={`~${percent(prediction.predictedLoadLostPercent)}`} />
           <Row label="Model uncertainty" value={capitalize(prediction.loadLossUncertainty)} />
@@ -137,7 +138,7 @@ export function InfoPanel(props: InfoPanelProps) {
             {selected.item.data.loadMw !== undefined && <Row label="Load" value={mw(selected.item.data.loadMw)} />}
             <Row label="ID" value={selected.item.id} />
           </>}</dl>
-          <div className="panel-actions"><ActionButton icon={<ScanLine />} disabled={busy} onClick={props.onPredict}>Predict Risk</ActionButton><ActionButton icon={<ZapOff />} variant="danger" disabled={busy} onClick={props.onFailure}>Simulate Failure</ActionButton></div>
+          <div className="panel-actions"><ActionButton icon={<ScanLine />} disabled={busy || props.mlPredictionAvailable === false} title={props.mlPredictionAvailable === false ? "Prediction model supports only the built-in Tripwire network" : undefined} onClick={props.onPredict}>Predict Risk</ActionButton><ActionButton icon={<ZapOff />} variant="danger" disabled={busy} onClick={props.onFailure}>Simulate Failure</ActionButton></div>
         </>}
       </>}
       {tab === "mitigation" && <><PanelHeading title="Mitigation" subtitle="Simulation-based recommendations" />

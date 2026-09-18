@@ -11,8 +11,9 @@ type Props = {
   onLoadPreset: (preset: ApiDemoPreset) => void; onProfileChange: (profile: OperatingProfileKey) => void;
   onConditionChange: (condition: ApiOperatingCondition) => void; onClear: () => void;
   onPredict: () => void; onFailure: () => void; onCascade: () => void; onMitigation: () => void;
+  mlPredictionAvailable?: boolean;
 };
-export function ScenarioControls({ activeAction, input, selectedPresetId, selected, presets, onLoadPreset, onProfileChange, onConditionChange, onClear, onPredict, onFailure, onCascade, onMitigation }: Props) {
+export function ScenarioControls({ activeAction, input, selectedPresetId, selected, presets, onLoadPreset, onProfileChange, onConditionChange, onClear, onPredict, onFailure, onCascade, onMitigation, mlPredictionAvailable = true }: Props) {
   const busy = activeAction !== null;
   const disabled = busy || !selected;
   return <aside className="control-rail" aria-label="Scenario controls">
@@ -30,10 +31,10 @@ export function ScenarioControls({ activeAction, input, selectedPresetId, select
     <section><h2 className="eyebrow">Component</h2><div className="selected-component"><div><strong>{selected ? selected.item.data?.name ?? selected.item.id : "None selected"}</strong><p className="muted">{selected ? selected.item.id : "No initial outage"}</p></div>{selected && <ActionButton className="icon-button" disabled={busy} onClick={onClear} title="Clear selected component" aria-label="Clear selected component" icon={<X />} variant="ghost" />}</div></section>
     <section><h2 className="eyebrow">Actions</h2><div className="rail-actions">
       <ActionButton icon={<Play />} variant="primary" disabled={disabled} onClick={onCascade}>{activeAction === "cascade" ? "Running Cascade..." : "Run Cascade"}</ActionButton>
-      <ActionButton icon={<ScanLine />} disabled={disabled} onClick={onPredict}>{activeAction === "predict" ? "Predicting..." : "Predict Risk"}</ActionButton>
+      <ActionButton icon={<ScanLine />} disabled={disabled || !mlPredictionAvailable} title={!mlPredictionAvailable ? "Prediction model supports only the built-in Tripwire network" : undefined} onClick={onPredict}>{activeAction === "predict" ? "Predicting..." : "Predict Risk"}</ActionButton>
       <ActionButton icon={<ZapOff />} variant="danger" disabled={disabled} onClick={onFailure}>{activeAction === "failure" ? "Simulating..." : "Simulate Failure"}</ActionButton>
       <ActionButton icon={<Shield />} variant="ghost" disabled={disabled} onClick={onMitigation}>{activeAction === "mitigation" ? "Evaluating..." : "Find Mitigation"}</ActionButton>
-    </div></section>
+    </div>{!mlPredictionAvailable && <p className="model-note">ML prediction unavailable for modified topology.</p>}</section>
     <div className="rail-footer"><Activity size={14} aria-hidden="true" /><span>AC power flow / pandapower</span></div>
   </aside>;
 }
