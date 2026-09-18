@@ -92,7 +92,7 @@ class PredictionRequest(ScenarioRequest):
 
 
 class RecommendationRequest(ScenarioRequest):
-    max_candidates: int = Field(default=24, ge=1, le=30)
+    max_candidates: int = Field(default=10, ge=1, le=30)
     top_n: int = Field(default=3, ge=1, le=5)
 
 

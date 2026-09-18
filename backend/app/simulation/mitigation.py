@@ -79,7 +79,7 @@ def recommend_mitigations(
     component_id: str,
     operating_condition: dict[str, Any] | None = None,
     config: ScenarioConfig | None = None,
-    max_candidates: int = 24,
+    max_candidates: int = 10,
     top_n: int = 3,
 ) -> RecommendationResponse:
     started = perf_counter()

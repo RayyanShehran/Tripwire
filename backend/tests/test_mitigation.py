@@ -178,7 +178,7 @@ def test_recommend_api_valid_request() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["baseline"]["load_lost_percent"] == 100.0
-    assert payload["candidate_count"] <= 24
+    assert payload["candidate_count"] <= 10
     assert payload["recommendations"]
 
 
