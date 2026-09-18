@@ -153,7 +153,7 @@ After the frontend is deployed, update the backend CORS variable with the exact 
 - Browser blocks API calls: add the deployed frontend URL to `ALLOWED_ORIGINS` on the backend.
 - `/ready` returns model failure: verify all files under `backend/models/` are deployed and `MODEL_PATH` points to that folder.
 - Backend starts locally but not hosted: confirm the platform supplies `$PORT` and the start command uses it.
-- Recommendations feel slow: mitigation evaluates ten simulator candidates by default and is expected to be slower than grid, prediction, or cascade requests.
+- Recommendations feel slow: mitigation evaluates six deterministic simulator candidates by default and is expected to be slower than grid, prediction, or cascade requests.
 - The first request takes up to a minute: the Render free instance is waking from inactivity.
 
 ## Pre-Deployment Checks

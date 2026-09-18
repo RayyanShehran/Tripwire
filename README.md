@@ -111,6 +111,12 @@ Tripwire trains two baseline models from the generated synthetic scenario datase
 - Cascade classifier: predicts the probability that an initial outage causes at least one secondary failure.
 - Load-loss regressor: predicts final load lost percentage after the full cascade.
 
+Training uses separate grouped training, validation, and final test partitions. Candidate
+models are selected on validation data; the final test split is used only for reporting.
+Because synthetic load-loss outcomes are strongly concentrated around zero loss and total
+blackout, the UI treats cascade probability as the primary signal and labels load loss as
+a secondary estimate with model uncertainty.
+
 Training uses a single authoritative pre-failure feature list. It excludes post-cascade targets such as cascade depth, failed components, final served/unserved load, termination reason, and severity.
 
 Train models from `tripwire/backend`:
@@ -477,6 +483,7 @@ CI:
 
 - GitHub Actions runs backend tests.
 - GitHub Actions runs frontend tests, lint, and the production build after a frozen-lockfile install.
+- GitHub Actions runs one Chromium component-selection smoke test after both jobs pass.
 
 ## Current Scope
 

@@ -180,7 +180,7 @@ No endpoint inherits outages from a previous request. This keeps repeated tests 
 
 Prediction, single failure, cascade, and recommendation requests are normalized into the same `ScenarioConfig`. The configuration contains the operating multipliers, dispatch profile, initial component failure, optional preset identifier, and seed. Every scenario network is created by `build_scenario_network(config)`, and responses expose a deterministic `scenario_id` that excludes the mitigation action. Baseline and mitigation candidates therefore differ only by the intervention.
 
-The frontend keeps the original unmitigated cascade and the replayed mitigated cascade in separate state. Changing the selected component, preset, or operating profile invalidates dependent prediction, failure, cascade, and mitigation results. Reset clears all scenario state and returns the profile and grid to baseline.
+The frontend keeps the original unmitigated cascade and the replayed mitigated cascade in separate state. Inspecting a component is local UI state and does not reload the grid or invalidate results. Starting an action against a newly inspected component, changing a preset, or changing an operating profile invalidates only dependent results. Reset clears all scenario state and returns the profile and grid to baseline.
 
 `frontend/components/grid/scenario-state.ts` owns these transitions in a single reducer. A revision number rejects late responses after a configuration change or reset, and scenario fingerprints prevent mismatched comparison results. Grid previews use operating-condition query parameters on `GET /api/grid`. `pnpm test` covers replay immutability, profile/component invalidation, reset, and late responses.
 
@@ -319,7 +319,7 @@ The endpoint constructs the same pre-failure feature row used during training, r
     "line_rating_multiplier": 0.35,
     "dispatch_profile": "balanced"
   },
-  "max_candidates": 24,
+  "max_candidates": 6,
   "top_n": 3
 }
 ```
@@ -440,7 +440,7 @@ The feature list is defined programmatically in `app/ml/features.py` and include
 
 Categorical features are handled with `OneHotEncoder(handle_unknown="ignore")`. Numeric features pass through a `ColumnTransformer`; scaled pipelines are used for linear models. The preprocessing is inside each scikit-learn `Pipeline`, so transformations are fit only on the training split.
 
-The default split is `GroupShuffleSplit` grouped by initial failed component when both train and test splits contain both cascade classes. This reduces leakage from near-duplicate operating scenarios for the same failed component appearing in both train and test. If a small test dataset cannot support that split, training falls back to a stratified random split.
+The default evaluation uses separate training, validation, and final test partitions produced with `GroupShuffleSplit` grouped by initial failed component when all partitions contain both cascade classes. Candidate models are selected on validation metrics, refit on training plus validation data, and reported once against the untouched final test split. This reduces leakage from near-duplicate operating scenarios for the same failed component. If a small test dataset cannot support grouped partitions, training falls back to separate stratified train, validation, and test splits.
 
 Current baseline model families:
 
