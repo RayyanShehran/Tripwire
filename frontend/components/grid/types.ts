@@ -22,6 +22,7 @@ export type GridLineData = {
   status: GridStatus;
   isCurrentlyOverloaded?: boolean;
   routeSide?: "left" | "right";
+  labelOffset?: number;
   isUnsupplied?: boolean;
   isNewlyFailed?: boolean;
 };

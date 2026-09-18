@@ -1,10 +1,11 @@
 "use client";
 import { memo } from "react";
-import { BaseEdge, EdgeLabelRenderer, getStraightPath, type EdgeProps } from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, getStraightPath, useStore, type EdgeProps } from "@xyflow/react";
 import { TriangleAlert } from "lucide-react";
 import { statusStyles } from "./status";
 import type { GridLineData } from "./types";
 export const TransmissionLine = memo(function TransmissionLine({ id, sourceX, sourceY, targetX, targetY, data, selected }: EdgeProps & { data?: GridLineData }) {
+  const zoom = useStore((state) => state.transform[2]);
   let [path, x, y] = getStraightPath({ sourceX, sourceY, targetX, targetY });
   const corridor = sourceX + (data?.routeSide === "left" ? -42 : 42);
   if (data?.routeSide) {
@@ -16,6 +17,8 @@ export const TransmissionLine = memo(function TransmissionLine({ id, sourceX, so
   const style = statusStyles[status];
   const connection = id.startsWith("connection-");
   const unsupplied = data?.isUnsupplied;
+  const showLabel = !connection && data && (zoom >= 0.62 || selected || status !== "Healthy");
+  const labelOffset = data?.labelOffset ?? 0;
   return <>
     {selected && <BaseEdge path={path} style={{ stroke: "var(--color-paper)", strokeWidth: 9 }} />}
     <BaseEdge id={id} path={path} interactionWidth={20} style={{
@@ -23,9 +26,9 @@ export const TransmissionLine = memo(function TransmissionLine({ id, sourceX, so
       strokeWidth: selected ? 4 : connection ? 1 : style.width,
       strokeDasharray: unsupplied ? "2 5" : style.dash, opacity: unsupplied ? .5 : 1,
     }} />
-    {!connection && data && <EdgeLabelRenderer>
+    {showLabel && <EdgeLabelRenderer>
       <div className={`edge-label nodrag nopan ${selected ? "is-selected" : ""} ${status === "Failed" && !unsupplied ? "danger" : ""}`}
-        style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)` }}>
+        style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y + labelOffset}px)` }}>
         {status === "Overloaded" && <TriangleAlert size={11} aria-hidden="true" />}
         <span>{id.replace("line-", "L")}</span><strong>{unsupplied ? "Unsupplied" : data.loadingPercent == null ? status : `${data.loadingPercent.toFixed(0)}%`}</strong>
       </div>

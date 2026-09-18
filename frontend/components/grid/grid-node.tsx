@@ -1,17 +1,18 @@
 "use client";
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import { Factory, UtilityPole, PlugZap, TriangleAlert, Unplug, X } from "lucide-react";
 import type { GridNodeData } from "./types";
 
 type GridNodeProps = NodeProps & { data: GridNodeData };
 function NodeShell({ data }: { data: GridNodeData }) {
+  const compact = useStore((state) => state.transform[2] < 0.62);
   const Icon = data.type === "Generator" ? Factory : data.type === "Load" ? PlugZap : UtilityPole;
   const status = data.isUnsupplied ? "Unsupplied" : data.status;
   const StatusIcon = status === "Failed" ? X : status === "Unsupplied" ? Unplug : TriangleAlert;
   const name = data.name.replace(/ 230 kV Bus$/, "").replace(/ Generator$/, "").replace(/ Load$/, "");
   const value = data.type === "Generator" ? data.generationMw : data.type === "Load" ? data.loadMw : data.voltagePu;
-  return <div className={`grid-node status-${status.toLowerCase()} ${data.isNewlyFailed ? "new-failure" : ""}`} title={`${data.name}: ${status}`}>
+  return <div className={`grid-node status-${status.toLowerCase()} ${data.isNewlyFailed ? "new-failure" : ""} ${compact ? "zoom-compact" : ""}`} title={`${data.name}: ${status}`}>
     {[Position.Left, Position.Right, Position.Top, Position.Bottom].map((position) => <span key={position}>
       <Handle type="target" id={`target-${position}`} position={position} />
       <Handle type="source" id={`source-${position}`} position={position} />

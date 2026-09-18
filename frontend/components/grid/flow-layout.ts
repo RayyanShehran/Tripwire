@@ -1,25 +1,14 @@
 import { toLineData, toNodeData, type ApiGridResponse, type ApiCascadeStep } from "./api";
 import type { GridLine, GridNode } from "./types";
-
-type Point = { x: number; y: number };
-// Stable schematic coordinates for the teaching network, independent of scenario values.
-const schematic: Record<string, Point> = {
-  "bus-0": { x: 0, y: 120 }, "bus-1": { x: 210, y: 120 },
-  "bus-2": { x: 420, y: 120 }, "bus-3": { x: 420, y: 300 },
-  "bus-4": { x: 0, y: 480 }, "bus-5": { x: 210, y: 480 },
-  "bus-6": { x: 0, y: 300 }, "bus-7": { x: 420, y: 480 },
-  "gen-north": { x: 0, y: 0 }, "gen-south": { x: 0, y: 610 },
-  "gen-harbor": { x: 420, y: 610 }, "load-west": { x: -175, y: 300 },
-  "load-east": { x: 595, y: 300 }, "load-metro": { x: 210, y: 610 },
-  "load-harbor": { x: 595, y: 480 },
-};
+import { createDefaultLayout } from "./layout-state";
 
 export function toFlowData(grid: ApiGridResponse, step?: ApiCascadeStep, failedIds: string[] = []): { nodes: GridNode[]; edges: GridLine[] } {
   const failures = new Set(failedIds);
   const newlyFailed = new Set(step?.newly_failed_components.map((item) => item.component_id));
   const overloaded = new Set(step?.overloaded_lines.map((item) => item.component_id));
-  const nodes: GridNode[] = grid.nodes.map((node, index) => ({
-    id: node.id, type: node.type, position: schematic[node.id] ?? { x: (index % 3) * 240, y: Math.floor(index / 3) * 180 },
+  const defaultPositions = createDefaultLayout(grid.nodes);
+  const nodes: GridNode[] = grid.nodes.map((node) => ({
+    id: node.id, type: node.type, position: defaultPositions[node.id],
     data: { ...toNodeData(node), isNewlyFailed: newlyFailed.has(node.id),
       isUnsupplied: node.status === "failed" && node.voltage === null && !failures.has(node.id) && !failures.has(node.connected_bus_id ?? "") },
   }));
@@ -38,10 +27,29 @@ export function toFlowData(grid: ApiGridResponse, step?: ApiCascadeStep, failedI
       data: { name: "Connection", capacityMw: 0, loadingPercent: 0, status: nodeData.status, isUnsupplied: nodeData.isUnsupplied },
     });
   });
+  return { nodes, edges: routeFlowEdges(nodes, edges) };
+}
+
+export function routeFlowEdges(nodes: GridNode[], edges: GridLine[]): GridLine[] {
   const positions = new Map(nodes.map((node) => [node.id, node.position]));
-  for (const edge of edges) {
-    const a = positions.get(edge.source)!;
-    const b = positions.get(edge.target)!;
+  const parallelCounts = new Map<string, number>();
+  const parallelIndexes = new Map<string, number>();
+  for (const edge of edges.filter((item) => !item.id.startsWith("connection-"))) {
+    const key = [edge.source, edge.target].sort().join("::");
+    parallelCounts.set(key, (parallelCounts.get(key) ?? 0) + 1);
+  }
+  return edges.map((original) => {
+    const edge: GridLine = { ...original, data: original.data ? { ...original.data, routeSide: undefined } : original.data };
+    const a = positions.get(edge.source);
+    const b = positions.get(edge.target);
+    if (!a || !b) return edge;
+    if (edge.data && !edge.id.startsWith("connection-")) {
+      const key = [edge.source, edge.target].sort().join("::");
+      const count = parallelCounts.get(key) ?? 1;
+      const index = parallelIndexes.get(key) ?? 0;
+      parallelIndexes.set(key, index + 1);
+      edge.data.labelOffset = (index - (count - 1) / 2) * 24;
+    }
     const dx = b.x - a.x, dy = b.y - a.y;
     const horizontal = Math.abs(dx) >= Math.abs(dy);
     // Long vertical ties bypass intermediate bus symbols rather than crossing them.
@@ -50,10 +58,10 @@ export function toFlowData(grid: ApiGridResponse, step?: ApiCascadeStep, failedI
       edge.sourceHandle = `source-${side}`;
       edge.targetHandle = `target-${side}`;
       if (edge.data) edge.data.routeSide = side;
-      continue;
+      return edge;
     }
     edge.sourceHandle = `source-${horizontal ? dx >= 0 ? "right" : "left" : dy >= 0 ? "bottom" : "top"}`;
     edge.targetHandle = `target-${horizontal ? dx >= 0 ? "left" : "right" : dy >= 0 ? "top" : "bottom"}`;
-  }
-  return { nodes, edges };
+    return edge;
+  });
 }

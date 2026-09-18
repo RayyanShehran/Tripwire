@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 import { Background, Controls, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -10,13 +10,14 @@ import { fetchGrid, fetchDemoPresets, findMitigations, predictRisk, runCascade, 
 import { initialScenario, scenarioDisplayName, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
-import { toFlowData } from "./flow-layout";
+import { routeFlowEdges, toFlowData } from "./flow-layout";
+import { applyLayoutPositions, clearSavedLayout, createDefaultLayout, mergeLayoutPositions, readSavedLayout, writeSavedLayout } from "./layout-state";
 import { systemState } from "./presentation";
 import { ScenarioControls } from "./scenario-controls";
 import { NetworkTools } from "./network-tools";
 import { StatusBadge } from "../ui/status-badge";
 import { ActionButton } from "../ui/action-button";
-import type { SelectedGridElement } from "./types";
+import type { GridNode, SelectedGridElement } from "./types";
 const nodeTypes = { generator: GeneratorNode, bus: BusNode, load: LoadNode };
 const edgeTypes = { transmissionLine: TransmissionLine };
 
@@ -35,6 +36,7 @@ export function GridVisualization() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
   const [selectedComponent, setSelectedComponent] = useState<ScenarioInput["component"]>(null);
+  const [layoutLocked, setLayoutLocked] = useState(true);
   const {
     load_multiplier: loadMultiplier,
     generation_multiplier: generationMultiplier,
@@ -52,16 +54,19 @@ export function GridVisualization() {
   const flowData = useMemo(() => grid ? toFlowData(grid, currentCascadeStep ?? undefined, failedIds) : { nodes: [], edges: [] }, [grid, currentCascadeStep, failedIds]);
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
+  const nodesRef = useRef<GridNode[]>(flowData.nodes);
+  const savedPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+  const savedLayoutLoadedRef = useRef(false);
   const selected = useMemo<SelectedGridElement>(() => {
     const component = selectedComponent;
     if (!component) return null;
     if (component.component_type === "line") {
-      const item = flowData.edges.find((edge) => edge.id === component.component_id);
+      const item = edges.find((edge) => edge.id === component.component_id);
       return item ? { kind: "line", item } : null;
     }
-    const item = flowData.nodes.find((node) => node.id === component.component_id);
+    const item = nodes.find((node) => node.id === component.component_id);
     return item ? { kind: "node", item } : null;
-  }, [selectedComponent, flowData]);
+  }, [selectedComponent, nodes, edges]);
   const prediction = useMemo(() => scenario.prediction ? {
     ...toRiskPrediction(scenario.prediction),
     ...(originalCascadeResult ? {
@@ -87,16 +92,34 @@ export function GridVisualization() {
   }, [apiBaseUrl]);
 
   useEffect(() => {
+    if (!savedLayoutLoadedRef.current && flowData.nodes.length) {
+      savedPositionsRef.current = readSavedLayout(window.localStorage, flowData.nodes.map((node) => node.id));
+      savedLayoutLoadedRef.current = true;
+    }
+    const currentNodes = nodesRef.current;
+    const selectedNodes = new Map(currentNodes.map((node) => [node.id, node.selected]));
+    const mergedNodes = mergeLayoutPositions(flowData.nodes, currentNodes, savedPositionsRef.current)
+      .map((node) => ({ ...node, selected: selectedNodes.get(node.id) ?? false }));
+    nodesRef.current = mergedNodes;
+    setNodes(mergedNodes);
+    setEdges((currentEdges) => {
+      const selectedEdges = new Map(currentEdges.map((edge) => [edge.id, edge.selected]));
+      return routeFlowEdges(mergedNodes, flowData.edges)
+        .map((edge) => ({ ...edge, selected: selectedEdges.get(edge.id) ?? false }));
+    });
+  }, [flowData, setNodes, setEdges]);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
     const selectedId = selectedComponent?.component_id;
-    setNodes(flowData.nodes.map((node) => {
-      const isSelected = node.id === selectedId;
-      return node.selected === isSelected ? node : { ...node, selected: isSelected };
-    }));
-    setEdges(flowData.edges.map((edge) => {
-      const isSelected = edge.id === selectedId;
-      return edge.selected === isSelected ? edge : { ...edge, selected: isSelected };
-    }));
-  }, [flowData, selectedComponent, setNodes, setEdges]);
+    setNodes((current) => current.map((node) => node.selected === (node.id === selectedId)
+      ? node : { ...node, selected: node.id === selectedId }));
+    setEdges((current) => current.map((edge) => edge.selected === (edge.id === selectedId)
+      ? edge : { ...edge, selected: edge.id === selectedId }));
+  }, [selectedComponent, setNodes, setEdges]);
 
   useEffect(() => {
     let active = true;
@@ -248,6 +271,33 @@ export function GridVisualization() {
     setIsPlaying(true);
   }, [cascadeResult, currentStepIndex, isPlaying]);
 
+  const applyVisualLayout = useCallback((positions: Record<string, { x: number; y: number }>, persist: boolean) => {
+    const nextNodes = applyLayoutPositions(nodesRef.current, positions);
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+    setEdges((current) => routeFlowEdges(nextNodes, current));
+    if (persist) writeSavedLayout(window.localStorage, nextNodes);
+  }, [setNodes, setEdges]);
+
+  const handleAutoLayout = useCallback(() => {
+    applyVisualLayout(createDefaultLayout(nodesRef.current), true);
+  }, [applyVisualLayout]);
+
+  const handleResetLayout = useCallback(() => {
+    clearSavedLayout(window.localStorage);
+    savedPositionsRef.current = {};
+    applyVisualLayout(createDefaultLayout(nodesRef.current), false);
+  }, [applyVisualLayout]);
+
+  const handleNodeDragStop = useCallback((node: GridNode) => {
+    const nextNodes = nodesRef.current.map((item) => item.id === node.id
+      ? { ...item, position: { ...node.position } } : item);
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+    setEdges((current) => routeFlowEdges(nextNodes, current));
+    writeSavedLayout(window.localStorage, nextNodes);
+  }, [setNodes, setEdges]);
+
   const system = systemState(grid, cascadeResult, currentStepIndex, activeAction === "cascade");
   const scenarioName = scenarioDisplayName(scenario.input, demoPresets);
   return <ReactFlowProvider>
@@ -265,12 +315,13 @@ export function GridVisualization() {
         onClear={() => selectComponent(null)} onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onCascade={handleRunCascade} onMitigation={handleFindMitigation} />
       <div className="workspace-center">
         <section className="network-frame" aria-label="Power network">
-          <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid} /></header>
+          <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid} locked={layoutLocked} onAutoLayout={handleAutoLayout} onResetLayout={handleResetLayout} onToggleLock={() => setLayoutLocked((locked) => !locked)} /></header>
           {errorMessage && <div className="error-banner" role="alert">{errorMessage}<button className="button button-ghost icon-button" onClick={() => configureScenario({ ...scenario.input })} title="Retry loading the scenario" aria-label="Retry loading the scenario"><RotateCcw /></button></div>}
           <div className="network-canvas">
             {!grid ? <div className="state-message" role="status">{isLoading ? <LoaderCircle size={24} className="loading-icon" aria-hidden="true" /> : <CircleX size={24} aria-hidden="true" />}<h3>{isLoading ? "Loading network" : "Network unavailable"}</h3></div> :
-              <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .08 }} minZoom={.2} maxZoom={1.8}
-                nodesConnectable={false} nodesDraggable={false} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+              <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .12 }} minZoom={.2} maxZoom={1.8}
+                nodesConnectable={false} nodesDraggable={!layoutLocked} snapToGrid snapGrid={[15, 15]} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+                onNodeDragStop={(_, node) => handleNodeDragStop(node as GridNode)}
                 onNodeClick={(_, node) => selectComponent({ component_type: node.type as ApiComponentType, component_id: node.id })}
                 onEdgeClick={(_, edge) => { if (!edge.id.startsWith("connection-")) selectComponent({ component_type: "line", component_id: edge.id }); }}>
                 <Background color="var(--color-hairline)" gap={20} size={1} />
