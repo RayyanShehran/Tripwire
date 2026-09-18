@@ -4,14 +4,14 @@ import type { GridLine, GridNode } from "./types";
 type Point = { x: number; y: number };
 // Stable schematic coordinates for the teaching network, independent of scenario values.
 const schematic: Record<string, Point> = {
-  "bus-0": { x: 0, y: 140 }, "bus-1": { x: 240, y: 140 },
-  "bus-2": { x: 480, y: 140 }, "bus-3": { x: 480, y: 360 },
-  "bus-4": { x: 0, y: 580 }, "bus-5": { x: 240, y: 580 },
-  "bus-6": { x: 0, y: 360 }, "bus-7": { x: 480, y: 580 },
-  "gen-north": { x: 0, y: 0 }, "gen-south": { x: 0, y: 730 },
-  "gen-harbor": { x: 480, y: 730 }, "load-west": { x: -200, y: 360 },
-  "load-east": { x: 680, y: 360 }, "load-metro": { x: 240, y: 730 },
-  "load-harbor": { x: 680, y: 580 },
+  "bus-0": { x: 0, y: 120 }, "bus-1": { x: 210, y: 120 },
+  "bus-2": { x: 420, y: 120 }, "bus-3": { x: 420, y: 300 },
+  "bus-4": { x: 0, y: 480 }, "bus-5": { x: 210, y: 480 },
+  "bus-6": { x: 0, y: 300 }, "bus-7": { x: 420, y: 480 },
+  "gen-north": { x: 0, y: 0 }, "gen-south": { x: 0, y: 610 },
+  "gen-harbor": { x: 420, y: 610 }, "load-west": { x: -175, y: 300 },
+  "load-east": { x: 595, y: 300 }, "load-metro": { x: 210, y: 610 },
+  "load-harbor": { x: 595, y: 480 },
 };
 
 export function toFlowData(grid: ApiGridResponse, step?: ApiCascadeStep, failedIds: string[] = []): { nodes: GridNode[]; edges: GridLine[] } {

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { defineConfig } from "@playwright/test";
 
 const frontendDir = __dirname;
@@ -9,9 +9,13 @@ const venvPython = resolve(
   process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python",
 );
 const python = existsSync(venvPython) ? `"${venvPython}"` : "python";
+const nextBuildDir = resolve(frontendDir, ".next");
+if (dirname(nextBuildDir) !== frontendDir) {
+  throw new Error("Refusing to clean a Next.js build directory outside the frontend root");
+}
 const frontendCommand = process.platform === "win32"
-  ? "set NEXT_PUBLIC_API_URL=http://127.0.0.1:8000&& set NEXT_DIST_DIR=.next-e2e&& pnpm dev --hostname 127.0.0.1 --port 3000"
-  : "NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 NEXT_DIST_DIR=.next-e2e pnpm dev --hostname 127.0.0.1 --port 3000";
+  ? `powershell -NoProfile -Command "$env:NEXT_PUBLIC_API_URL='http://127.0.0.1:8000'; Remove-Item -LiteralPath '${nextBuildDir}' -Recurse -Force -ErrorAction SilentlyContinue; pnpm dev --hostname 127.0.0.1 --port 3000"`
+  : `rm -rf '${nextBuildDir}' && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 pnpm dev --hostname 127.0.0.1 --port 3000`;
 
 export default defineConfig({
   testDir: "./tests/e2e",

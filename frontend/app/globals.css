@@ -59,11 +59,11 @@ h3 { font-size: 16px; font-weight: 600; }
 .react-flow__node.selected .grid-node { outline: 2px solid var(--color-ink); outline-offset: 4px; }
 .grid-node .react-flow__handle { width: 5px; height: 5px; border: none; background: var(--color-mid-gray); }
 .node-caption { display: flex; gap: 5px; align-items: center; font-size: 11px; text-transform: uppercase; color: var(--color-mid-gray); }
-.node-name { font-size: 14px; font-weight: 600; line-height: 16px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-name { font-size: 15px; font-weight: 600; line-height: 16px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .node-reading { display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-top: 4px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .node-reading small { font-size: 11px; color: var(--color-mid-gray); }
 .node-status { display: flex; align-items: center; gap: 2px; font-size: 10px; }
-.edge-label { pointer-events: none; position: absolute; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border: 1px solid var(--color-hairline); border-radius: var(--radius-small); background: var(--color-paper); font-size: 11px; color: var(--color-mid-gray); white-space: nowrap; }
+.edge-label { pointer-events: none; position: absolute; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border: 1px solid var(--color-hairline); border-radius: var(--radius-small); background: var(--color-paper); font-size: 13px; color: var(--color-mid-gray); white-space: nowrap; }
 .edge-label strong { color: var(--color-ink); font-weight: 500; }
 .edge-label.is-selected { border-color: var(--color-ink); }
 .edge-label.danger, .edge-label.danger strong { color: var(--color-ember); }
