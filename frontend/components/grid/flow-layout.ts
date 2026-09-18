@@ -1,6 +1,7 @@
 import { toLineData, toNodeData, type ApiGridResponse, type ApiCascadeStep } from "./api";
 import type { GridLine, GridNode } from "./types";
 import { createDefaultLayout } from "./layout-state";
+import { chooseEdgeLabelPosition, GRID_NODE_HEIGHT, GRID_NODE_WIDTH, type LayoutRect } from "./edge-label-layout";
 
 export function toFlowData(grid: ApiGridResponse, step?: ApiCascadeStep, failedIds: string[] = []): { nodes: GridNode[]; edges: GridLine[] } {
   const failures = new Set(failedIds);
@@ -32,6 +33,13 @@ export function toFlowData(grid: ApiGridResponse, step?: ApiCascadeStep, failedI
 
 export function routeFlowEdges(nodes: GridNode[], edges: GridLine[]): GridLine[] {
   const positions = new Map(nodes.map((node) => [node.id, node.position]));
+  const nodeRects: LayoutRect[] = nodes.map((node) => ({
+    x: node.position.x,
+    y: node.position.y,
+    width: GRID_NODE_WIDTH,
+    height: GRID_NODE_HEIGHT,
+  }));
+  const occupiedLabels: LayoutRect[] = [];
   const parallelCounts = new Map<string, number>();
   const parallelIndexes = new Map<string, number>();
   for (const edge of edges.filter((item) => !item.id.startsWith("connection-"))) {
@@ -43,13 +51,6 @@ export function routeFlowEdges(nodes: GridNode[], edges: GridLine[]): GridLine[]
     const a = positions.get(edge.source);
     const b = positions.get(edge.target);
     if (!a || !b) return edge;
-    if (edge.data && !edge.id.startsWith("connection-")) {
-      const key = [edge.source, edge.target].sort().join("::");
-      const count = parallelCounts.get(key) ?? 1;
-      const index = parallelIndexes.get(key) ?? 0;
-      parallelIndexes.set(key, index + 1);
-      edge.data.labelOffset = (index - (count - 1) / 2) * 24;
-    }
     const dx = b.x - a.x, dy = b.y - a.y;
     const horizontal = Math.abs(dx) >= Math.abs(dy);
     // Long vertical ties bypass intermediate bus symbols rather than crossing them.
@@ -58,10 +59,36 @@ export function routeFlowEdges(nodes: GridNode[], edges: GridLine[]): GridLine[]
       edge.sourceHandle = `source-${side}`;
       edge.targetHandle = `target-${side}`;
       if (edge.data) edge.data.routeSide = side;
+      placeLabel(edge, {
+        x: a.x + GRID_NODE_WIDTH / 2 + (side === "left" ? -42 : 42),
+        y: a.y + GRID_NODE_HEIGHT / 2,
+      }, {
+        x: b.x + GRID_NODE_WIDTH / 2 + (side === "left" ? -42 : 42),
+        y: b.y + GRID_NODE_HEIGHT / 2,
+      });
       return edge;
     }
     edge.sourceHandle = `source-${horizontal ? dx >= 0 ? "right" : "left" : dy >= 0 ? "bottom" : "top"}`;
     edge.targetHandle = `target-${horizontal ? dx >= 0 ? "left" : "right" : dy >= 0 ? "top" : "bottom"}`;
+    const key = [edge.source, edge.target].sort().join("::");
+    const count = parallelCounts.get(key) ?? 1;
+    const index = parallelIndexes.get(key) ?? 0;
+    parallelIndexes.set(key, index + 1);
+    const parallelOffset = (index - (count - 1) / 2) * 24;
+    placeLabel(edge, {
+      x: a.x + GRID_NODE_WIDTH / 2,
+      y: a.y + GRID_NODE_HEIGHT / 2 + parallelOffset,
+    }, {
+      x: b.x + GRID_NODE_WIDTH / 2,
+      y: b.y + GRID_NODE_HEIGHT / 2 + parallelOffset,
+    });
     return edge;
   });
+
+  function placeLabel(edge: GridLine, source: { x: number; y: number }, target: { x: number; y: number }) {
+    if (!edge.data || edge.id.startsWith("connection-")) return;
+    const placement = chooseEdgeLabelPosition(source, target, nodeRects, occupiedLabels);
+    edge.data.labelPosition = placement.point;
+    occupiedLabels.push(placement.rect);
+  }
 }

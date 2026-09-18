@@ -3,10 +3,12 @@ import { memo } from "react";
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import { Factory, UtilityPole, PlugZap, TriangleAlert, Unplug, X } from "lucide-react";
 import type { GridNodeData } from "./types";
+import { useGridDisplayOptions } from "./grid-display";
 
 type GridNodeProps = NodeProps & { data: GridNodeData };
 function NodeShell({ data }: { data: GridNodeData }) {
   const compact = useStore((state) => state.transform[2] < 0.62);
+  const display = useGridDisplayOptions();
   const Icon = data.type === "Generator" ? Factory : data.type === "Load" ? PlugZap : UtilityPole;
   const status = data.isUnsupplied ? "Unsupplied" : data.status;
   const StatusIcon = status === "Failed" ? X : status === "Unsupplied" ? Unplug : TriangleAlert;
@@ -19,9 +21,10 @@ function NodeShell({ data }: { data: GridNodeData }) {
     </span>)}
     <div className="node-caption"><Icon size={14} aria-hidden="true" /><span>{data.type === "Substation / Bus" ? "Bus / 230 kV" : data.type}</span></div>
     <div className="node-name">{name}</div>
-    <div className="node-reading"><span>{value == null ? "N/A" : value.toFixed(data.type === "Substation / Bus" ? 3 : 1)}<small>{data.type === "Substation / Bus" ? " p.u." : " MW"}</small></span>
-      <span className="node-status">{status !== "Healthy" && <StatusIcon size={11} aria-hidden="true" />}{status}</span>
-    </div>
+    {(display.showElectricalValues || display.showStatusText) && <div className="node-reading">
+      {display.showElectricalValues && <span className="node-reading-value">{value == null ? "N/A" : value.toFixed(data.type === "Substation / Bus" ? 3 : 1)}<small>{data.type === "Substation / Bus" ? " p.u." : " MW"}</small></span>}
+      {display.showStatusText && <span className="node-status">{status !== "Healthy" && <StatusIcon size={11} aria-hidden="true" />}{status}</span>}
+    </div>}
   </div>;
 }
 export const GeneratorNode = memo(function GeneratorNode({ data }: GridNodeProps) { return <NodeShell data={data} />; });

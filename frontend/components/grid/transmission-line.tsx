@@ -4,8 +4,10 @@ import { BaseEdge, EdgeLabelRenderer, getStraightPath, useStore, type EdgeProps 
 import { TriangleAlert } from "lucide-react";
 import { statusStyles } from "./status";
 import type { GridLineData } from "./types";
+import { useGridDisplayOptions } from "./grid-display";
 export const TransmissionLine = memo(function TransmissionLine({ id, sourceX, sourceY, targetX, targetY, data, selected }: EdgeProps & { data?: GridLineData }) {
   const zoom = useStore((state) => state.transform[2]);
+  const display = useGridDisplayOptions();
   let [path, x, y] = getStraightPath({ sourceX, sourceY, targetX, targetY });
   const corridor = sourceX + (data?.routeSide === "left" ? -42 : 42);
   if (data?.routeSide) {
@@ -17,8 +19,11 @@ export const TransmissionLine = memo(function TransmissionLine({ id, sourceX, so
   const style = statusStyles[status];
   const connection = id.startsWith("connection-");
   const unsupplied = data?.isUnsupplied;
-  const showLabel = !connection && data && (zoom >= 0.62 || selected || status !== "Healthy");
-  const labelOffset = data?.labelOffset ?? 0;
+  const showId = display.showLineIds && (zoom >= 0.8 || selected);
+  const showLoading = display.showLineLoading && zoom >= 0.55;
+  const showCriticalState = status !== "Healthy" || unsupplied;
+  const showLabel = !connection && data && (showId || showLoading || showCriticalState);
+  const labelPosition = data?.labelPosition ?? { x, y };
   return <>
     {selected && <BaseEdge path={path} style={{ stroke: "var(--color-paper)", strokeWidth: 9 }} />}
     <BaseEdge id={id} path={path} interactionWidth={20} style={{
@@ -28,9 +33,10 @@ export const TransmissionLine = memo(function TransmissionLine({ id, sourceX, so
     }} />
     {showLabel && <EdgeLabelRenderer>
       <div className={`edge-label nodrag nopan ${selected ? "is-selected" : ""} ${status === "Failed" && !unsupplied ? "danger" : ""}`}
-        style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y + labelOffset}px)` }}>
+        style={{ transform: `translate(-50%, -50%) translate(${labelPosition.x}px, ${labelPosition.y}px)` }}>
         {status === "Overloaded" && <TriangleAlert size={11} aria-hidden="true" />}
-        <span>{id.replace("line-", "L")}</span><strong>{unsupplied ? "Unsupplied" : data.loadingPercent == null ? status : `${data.loadingPercent.toFixed(0)}%`}</strong>
+        {showId && <span className="edge-label-id">{id.replace("line-", "L")}</span>}
+        {(showLoading || showCriticalState) && <strong>{unsupplied ? "Unsupplied" : data.loadingPercent == null ? status : `${data.loadingPercent.toFixed(0)}%`}</strong>}
       </div>
     </EdgeLabelRenderer>}
   </>;

@@ -15,6 +15,7 @@ import { applyLayoutPositions, clearSavedLayout, createDefaultLayout, mergeLayou
 import { systemState } from "./presentation";
 import { ScenarioControls } from "./scenario-controls";
 import { NetworkTools } from "./network-tools";
+import { defaultGridDisplayOptions, GridDisplayProvider, type GridDisplayOptions } from "./grid-display";
 import { StatusBadge } from "../ui/status-badge";
 import { ActionButton } from "../ui/action-button";
 import type { GridNode, SelectedGridElement } from "./types";
@@ -37,6 +38,7 @@ export function GridVisualization() {
   const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
   const [selectedComponent, setSelectedComponent] = useState<ScenarioInput["component"]>(null);
   const [layoutLocked, setLayoutLocked] = useState(true);
+  const [displayOptions, setDisplayOptions] = useState(defaultGridDisplayOptions);
   const {
     load_multiplier: loadMultiplier,
     generation_multiplier: generationMultiplier,
@@ -298,6 +300,10 @@ export function GridVisualization() {
     writeSavedLayout(window.localStorage, nextNodes);
   }, [setNodes, setEdges]);
 
+  const handleDisplayOptionChange = useCallback((option: keyof GridDisplayOptions, value: boolean) => {
+    setDisplayOptions((current) => ({ ...current, [option]: value }));
+  }, []);
+
   const system = systemState(grid, cascadeResult, currentStepIndex, activeAction === "cascade");
   const scenarioName = scenarioDisplayName(scenario.input, demoPresets);
   return <ReactFlowProvider>
@@ -315,18 +321,18 @@ export function GridVisualization() {
         onClear={() => selectComponent(null)} onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onCascade={handleRunCascade} onMitigation={handleFindMitigation} />
       <div className="workspace-center">
         <section className="network-frame" aria-label="Power network">
-          <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid} locked={layoutLocked} onAutoLayout={handleAutoLayout} onResetLayout={handleResetLayout} onToggleLock={() => setLayoutLocked((locked) => !locked)} /></header>
+          <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid} locked={layoutLocked} onAutoLayout={handleAutoLayout} onResetLayout={handleResetLayout} onToggleLock={() => setLayoutLocked((locked) => !locked)} displayOptions={displayOptions} onDisplayOptionChange={handleDisplayOptionChange} /></header>
           {errorMessage && <div className="error-banner" role="alert">{errorMessage}<button className="button button-ghost icon-button" onClick={() => configureScenario({ ...scenario.input })} title="Retry loading the scenario" aria-label="Retry loading the scenario"><RotateCcw /></button></div>}
           <div className="network-canvas">
             {!grid ? <div className="state-message" role="status">{isLoading ? <LoaderCircle size={24} className="loading-icon" aria-hidden="true" /> : <CircleX size={24} aria-hidden="true" />}<h3>{isLoading ? "Loading network" : "Network unavailable"}</h3></div> :
-              <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .12 }} minZoom={.2} maxZoom={1.8}
+              <GridDisplayProvider value={displayOptions}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .12 }} minZoom={.2} maxZoom={1.8}
                 nodesConnectable={false} nodesDraggable={!layoutLocked} snapToGrid snapGrid={[15, 15]} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
                 onNodeDragStop={(_, node) => handleNodeDragStop(node as GridNode)}
                 onNodeClick={(_, node) => selectComponent({ component_type: node.type as ApiComponentType, component_id: node.id })}
                 onEdgeClick={(_, edge) => { if (!edge.id.startsWith("connection-")) selectComponent({ component_type: "line", component_id: edge.id }); }}>
                 <Background color="var(--color-hairline)" gap={20} size={1} />
                 <Controls showFitView={false} showInteractive={false} />
-              </ReactFlow>}
+              </ReactFlow></GridDisplayProvider>}
           </div>
           <footer className="network-legend" aria-label="Network status legend">{["Healthy", "Stressed", "Overloaded", "Failed", "Unsupplied"].map((status) => <span key={status}><i className={`legend-line legend-${status.toLowerCase()}`} />{status}</span>)}</footer>
         </section>
