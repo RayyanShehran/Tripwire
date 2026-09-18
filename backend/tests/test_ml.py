@@ -46,7 +46,11 @@ def test_split_strategy_is_deterministic(ml_dataset) -> None:
     second = split_dataset(ml_dataset, random_seed=42)
 
     assert first.strategy == second.strategy
+    assert first.x_validation.index.tolist() == second.x_validation.index.tolist()
     assert first.x_test.index.tolist() == second.x_test.index.tolist()
+    assert set(first.x_train.index).isdisjoint(first.x_validation.index)
+    assert set(first.x_train.index).isdisjoint(first.x_test.index)
+    assert set(first.x_validation.index).isdisjoint(first.x_test.index)
 
 
 def test_classifier_and_regressor_training_complete(ml_dataset) -> None:
@@ -59,6 +63,22 @@ def test_classifier_and_regressor_training_complete(ml_dataset) -> None:
     assert result.metadata["regressor_model"]
     assert result.metadata["classifier_metrics"]["f1"] >= 0.0
     assert result.metadata["regressor_metrics"]["mae"] >= 0.0
+    assert result.metadata["classifier_metrics"] == result.metadata["classifier_test_metrics"]
+    assert result.metadata["regressor_metrics"] == result.metadata["regressor_test_metrics"]
+    assert set(result.metadata["all_regressor_validation_metrics"]) == {
+        "ridge_regression",
+        "random_forest_regressor",
+        "hist_gradient_boosting_regressor",
+        "gradient_boosting_regressor",
+    }
+    assert set(result.metadata["regressor_test_metrics"]["severity_buckets"]) == {
+        "zero",
+        "moderate",
+        "severe",
+    }
+    distribution = result.metadata["load_loss_target_distribution"]
+    assert set(distribution) == {"zero", "moderate", "severe", "total_blackout"}
+    assert sum(bucket["count"] for bucket in distribution.values()) == len(ml_dataset)
 
 
 def test_saved_artifacts_load_and_predict(ml_dataset) -> None:

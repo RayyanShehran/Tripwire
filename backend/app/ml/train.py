@@ -13,7 +13,13 @@ import numpy as np
 import pandas as pd
 import sklearn
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.base import clone
+from sklearn.ensemble import (
+    GradientBoostingRegressor,
+    HistGradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import (
     accuracy_score,
@@ -30,7 +36,7 @@ from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from app.ml.dataset import default_output_path, validate_dataset
+from app.ml.dataset import DATASET_SCHEMA_VERSION, default_output_path, validate_dataset
 from app.ml.features import (
     CATEGORICAL_FEATURES,
     MODEL_FEATURE_COLUMNS,
@@ -53,10 +59,13 @@ METADATA_ARTIFACT = "model_metadata.json"
 @dataclass(frozen=True)
 class SplitData:
     x_train: pd.DataFrame
+    x_validation: pd.DataFrame
     x_test: pd.DataFrame
     y_class_train: pd.Series
+    y_class_validation: pd.Series
     y_class_test: pd.Series
     y_reg_train: pd.Series
+    y_reg_validation: pd.Series
     y_reg_test: pd.Series
     strategy: str
 
@@ -86,11 +95,21 @@ def train_models(
     classifier_results = _train_classifiers(split, random_seed)
     regressor_results = _train_regressors(split, random_seed)
 
-    champion_classifier_name, champion_classifier, classifier_metrics = _select_classifier(
-        classifier_results
+    champion_classifier_name = _select_classifier(classifier_results)
+    champion_regressor_name = _select_regressor(regressor_results)
+    classifier_validation_metrics = classifier_results[champion_classifier_name][1]
+    regressor_validation_metrics = regressor_results[champion_regressor_name][1]
+    champion_classifier = _refit_classifier(
+        classifier_results[champion_classifier_name][0], split
     )
-    champion_regressor_name, champion_regressor, regressor_metrics = _select_regressor(
-        regressor_results
+    champion_regressor = _refit_regressor(
+        regressor_results[champion_regressor_name][0], split
+    )
+    classifier_test_metrics = _classification_metrics(
+        champion_classifier, split.x_test, split.y_class_test
+    )
+    regressor_test_metrics = _regression_metrics(
+        champion_regressor, split.x_test, split.y_reg_test
     )
 
     metadata = _metadata(
@@ -99,8 +118,10 @@ def train_models(
         split_strategy=split.strategy,
         classifier_name=champion_classifier_name,
         regressor_name=champion_regressor_name,
-        classifier_metrics=classifier_metrics,
-        regressor_metrics=regressor_metrics,
+        classifier_validation_metrics=classifier_validation_metrics,
+        regressor_validation_metrics=regressor_validation_metrics,
+        classifier_test_metrics=classifier_test_metrics,
+        regressor_test_metrics=regressor_test_metrics,
         classifier_results=classifier_results,
         regressor_results=regressor_results,
         random_seed=random_seed,
@@ -129,39 +150,82 @@ def split_dataset(dataframe: pd.DataFrame, random_seed: int = RANDOM_SEED) -> Sp
     y_reg = dataframe[REGRESSION_TARGET].astype(float)
     groups = dataframe["component_id"].astype(str)
 
-    if groups.nunique() >= 4:
-        splitter = GroupShuffleSplit(n_splits=20, test_size=0.25, random_state=random_seed)
-        for train_index, test_index in splitter.split(features, y_class, groups):
-            train_classes = y_class.iloc[train_index].nunique()
-            test_classes = y_class.iloc[test_index].nunique()
-            if train_classes > 1 and test_classes > 1:
-                return SplitData(
-                    x_train=features.iloc[train_index],
-                    x_test=features.iloc[test_index],
-                    y_class_train=y_class.iloc[train_index],
-                    y_class_test=y_class.iloc[test_index],
-                    y_reg_train=y_reg.iloc[train_index],
-                    y_reg_test=y_reg.iloc[test_index],
-                    strategy="group_shuffle_split_by_initial_component",
-                )
+    if groups.nunique() >= 6:
+        outer = GroupShuffleSplit(n_splits=30, test_size=0.2, random_state=random_seed)
+        for train_validation_index, test_index in outer.split(features, y_class, groups):
+            inner_features = features.iloc[train_validation_index]
+            inner_classes = y_class.iloc[train_validation_index]
+            inner_groups = groups.iloc[train_validation_index]
+            inner = GroupShuffleSplit(
+                n_splits=30,
+                test_size=0.25,
+                random_state=random_seed + 1,
+            )
+            for train_relative, validation_relative in inner.split(
+                inner_features, inner_classes, inner_groups
+            ):
+                train_index = train_validation_index[train_relative]
+                validation_index = train_validation_index[validation_relative]
+                if all(
+                    y_class.iloc[index].nunique() > 1
+                    for index in (train_index, validation_index, test_index)
+                ):
+                    return SplitData(
+                        x_train=features.iloc[train_index],
+                        x_validation=features.iloc[validation_index],
+                        x_test=features.iloc[test_index],
+                        y_class_train=y_class.iloc[train_index],
+                        y_class_validation=y_class.iloc[validation_index],
+                        y_class_test=y_class.iloc[test_index],
+                        y_reg_train=y_reg.iloc[train_index],
+                        y_reg_validation=y_reg.iloc[validation_index],
+                        y_reg_test=y_reg.iloc[test_index],
+                        strategy="grouped_train_validation_test_by_initial_component",
+                    )
 
     stratify = y_class if y_class.nunique() > 1 else None
-    x_train, x_test, y_class_train, y_class_test, y_reg_train, y_reg_test = train_test_split(
+    (
+        x_train_validation,
+        x_test,
+        y_class_train_validation,
+        y_class_test,
+        y_reg_train_validation,
+        y_reg_test,
+    ) = train_test_split(
         features,
         y_class,
         y_reg,
-        test_size=0.25,
+        test_size=0.2,
         random_state=random_seed,
         stratify=stratify,
     )
+    inner_stratify = y_class_train_validation if y_class_train_validation.nunique() > 1 else None
+    (
+        x_train,
+        x_validation,
+        y_class_train,
+        y_class_validation,
+        y_reg_train,
+        y_reg_validation,
+    ) = train_test_split(
+        x_train_validation,
+        y_class_train_validation,
+        y_reg_train_validation,
+        test_size=0.25,
+        random_state=random_seed + 1,
+        stratify=inner_stratify,
+    )
     return SplitData(
         x_train=x_train,
+        x_validation=x_validation,
         x_test=x_test,
         y_class_train=y_class_train,
+        y_class_validation=y_class_validation,
         y_class_test=y_class_test,
         y_reg_train=y_reg_train,
+        y_reg_validation=y_reg_validation,
         y_reg_test=y_reg_test,
-        strategy="stratified_random_split",
+        strategy="stratified_train_validation_test",
     )
 
 
@@ -212,7 +276,12 @@ def _train_classifiers(split: SplitData, random_seed: int) -> dict[str, tuple[Pi
         ),
     }
     return {
-        name: (pipeline.fit(split.x_train, split.y_class_train), _classification_metrics(pipeline, split))
+        name: (
+            pipeline.fit(split.x_train, split.y_class_train),
+            _classification_metrics(
+                pipeline, split.x_validation, split.y_class_validation
+            ),
+        )
         for name, pipeline in models.items()
     }
 
@@ -239,49 +308,93 @@ def _train_regressors(split: SplitData, random_seed: int) -> dict[str, tuple[Pip
                 ),
             ]
         ),
+        "hist_gradient_boosting_regressor": Pipeline(
+            [
+                ("preprocess", _preprocessor(scale_numeric=False)),
+                (
+                    "model",
+                    HistGradientBoostingRegressor(
+                        max_iter=160,
+                        learning_rate=0.06,
+                        max_leaf_nodes=24,
+                        l2_regularization=1.0,
+                        random_state=random_seed,
+                    ),
+                ),
+            ]
+        ),
+        "gradient_boosting_regressor": Pipeline(
+            [
+                ("preprocess", _preprocessor(scale_numeric=False)),
+                (
+                    "model",
+                    GradientBoostingRegressor(
+                        n_estimators=160,
+                        learning_rate=0.05,
+                        max_depth=3,
+                        min_samples_leaf=3,
+                        random_state=random_seed,
+                    ),
+                ),
+            ]
+        ),
     }
     return {
-        name: (pipeline.fit(split.x_train, split.y_reg_train), _regression_metrics(pipeline, split))
+        name: (
+            pipeline.fit(split.x_train, split.y_reg_train),
+            _regression_metrics(
+                pipeline, split.x_validation, split.y_reg_validation
+            ),
+        )
         for name, pipeline in models.items()
     }
 
 
-def _classification_metrics(pipeline: Pipeline, split: SplitData) -> dict[str, Any]:
-    predictions = pipeline.predict(split.x_test)
-    probabilities = pipeline.predict_proba(split.x_test)[:, 1]
+def _classification_metrics(
+    pipeline: Pipeline,
+    features: pd.DataFrame,
+    targets: pd.Series,
+) -> dict[str, Any]:
+    predictions = pipeline.predict(features)
+    probabilities = pipeline.predict_proba(features)[:, 1]
     return {
-        "accuracy": _round(accuracy_score(split.y_class_test, predictions)),
-        "precision": _round(precision_score(split.y_class_test, predictions, zero_division=0)),
-        "recall": _round(recall_score(split.y_class_test, predictions, zero_division=0)),
-        "f1": _round(f1_score(split.y_class_test, predictions, zero_division=0)),
-        "roc_auc": _round(roc_auc_score(split.y_class_test, probabilities))
-        if split.y_class_test.nunique() > 1
+        "accuracy": _round(accuracy_score(targets, predictions)),
+        "precision": _round(precision_score(targets, predictions, zero_division=0)),
+        "recall": _round(recall_score(targets, predictions, zero_division=0)),
+        "f1": _round(f1_score(targets, predictions, zero_division=0)),
+        "roc_auc": _round(roc_auc_score(targets, probabilities))
+        if targets.nunique() > 1
         else None,
-        "confusion_matrix": confusion_matrix(split.y_class_test, predictions).tolist(),
+        "confusion_matrix": confusion_matrix(targets, predictions).tolist(),
     }
 
 
-def _regression_metrics(pipeline: Pipeline, split: SplitData) -> dict[str, Any]:
-    predictions = np.clip(pipeline.predict(split.x_test), 0.0, 100.0)
-    rmse = math.sqrt(mean_squared_error(split.y_reg_test, predictions))
-    severe_mask = split.y_reg_test >= 50.0
+def _regression_metrics(
+    pipeline: Pipeline,
+    features: pd.DataFrame,
+    targets: pd.Series,
+) -> dict[str, Any]:
+    predictions = np.clip(pipeline.predict(features), 0.0, 100.0)
+    rmse = math.sqrt(mean_squared_error(targets, predictions))
+    severe_mask = targets >= 50.0
     severe_mae = (
-        mean_absolute_error(split.y_reg_test[severe_mask], predictions[severe_mask])
+        mean_absolute_error(targets[severe_mask], predictions[severe_mask])
         if severe_mask.any()
         else 0.0
     )
     return {
-        "mae": _round(mean_absolute_error(split.y_reg_test, predictions)),
+        "mae": _round(mean_absolute_error(targets, predictions)),
         "rmse": _round(rmse),
-        "r2": _round(r2_score(split.y_reg_test, predictions)),
+        "r2": _round(r2_score(targets, predictions)),
         "severe_blackout_mae": _round(severe_mae),
+        "severity_buckets": _severity_bucket_metrics(targets, predictions),
     }
 
 
 def _select_classifier(
     results: dict[str, tuple[Pipeline, dict[str, Any]]],
-) -> tuple[str, Pipeline, dict[str, Any]]:
-    name = max(
+) -> str:
+    return max(
         results,
         key=lambda model_name: (
             results[model_name][1]["f1"],
@@ -289,26 +402,68 @@ def _select_classifier(
             results[model_name][1]["recall"],
         ),
     )
-    pipeline, metrics = results[name]
-    return name, pipeline, metrics
 
 
 def _select_regressor(
     results: dict[str, tuple[Pipeline, dict[str, Any]]],
-) -> tuple[str, Pipeline, dict[str, Any]]:
-    name = min(results, key=lambda model_name: results[model_name][1]["mae"])
-    pipeline, metrics = results[name]
-    return name, pipeline, metrics
+) -> str:
+    return min(
+        results,
+        key=lambda model_name: (
+            results[model_name][1]["mae"],
+            results[model_name][1]["severe_blackout_mae"],
+            results[model_name][1]["rmse"],
+        ),
+    )
 
 
 def _preprocessor(scale_numeric: bool) -> ColumnTransformer:
     numeric_transformer = StandardScaler() if scale_numeric else "passthrough"
     return ColumnTransformer(
         [
-            ("categorical", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_FEATURES),
+            (
+                "categorical",
+                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                CATEGORICAL_FEATURES,
+            ),
             ("numeric", numeric_transformer, NUMERIC_FEATURES),
-        ]
+    ]
     )
+
+
+def _refit_classifier(pipeline: Pipeline, split: SplitData) -> Pipeline:
+    return clone(pipeline).fit(
+        pd.concat([split.x_train, split.x_validation]),
+        pd.concat([split.y_class_train, split.y_class_validation]),
+    )
+
+
+def _refit_regressor(pipeline: Pipeline, split: SplitData) -> Pipeline:
+    return clone(pipeline).fit(
+        pd.concat([split.x_train, split.x_validation]),
+        pd.concat([split.y_reg_train, split.y_reg_validation]),
+    )
+
+
+def _severity_bucket_metrics(
+    targets: pd.Series,
+    predictions: np.ndarray,
+) -> dict[str, dict[str, float | int]]:
+    buckets = {
+        "zero": targets == 0.0,
+        "moderate": (targets > 0.0) & (targets < 50.0),
+        "severe": targets >= 50.0,
+    }
+    result: dict[str, dict[str, float | int]] = {}
+    for name, mask in buckets.items():
+        count = int(mask.sum())
+        result[name] = {
+            "count": count,
+            "mae": _round(mean_absolute_error(targets[mask], predictions[mask]))
+            if count
+            else 0.0,
+        }
+    return result
 
 
 def _metadata(
@@ -317,8 +472,10 @@ def _metadata(
     split_strategy: str,
     classifier_name: str,
     regressor_name: str,
-    classifier_metrics: dict[str, Any],
-    regressor_metrics: dict[str, Any],
+    classifier_validation_metrics: dict[str, Any],
+    regressor_validation_metrics: dict[str, Any],
+    classifier_test_metrics: dict[str, Any],
+    regressor_test_metrics: dict[str, Any],
     classifier_results: dict[str, tuple[Pipeline, dict[str, Any]]],
     regressor_results: dict[str, tuple[Pipeline, dict[str, Any]]],
     random_seed: int,
@@ -326,10 +483,12 @@ def _metadata(
     regressor: Pipeline,
 ) -> dict[str, Any]:
     class_counts = dataframe[CLASSIFICATION_TARGET].value_counts().to_dict()
+    target_distribution = _target_distribution(dataframe[REGRESSION_TARGET])
     return {
         "model_version": MODEL_VERSION,
         "training_timestamp": datetime.now(UTC).isoformat(),
         "dataset_path": str(dataset_path),
+        "dataset_schema_version": DATASET_SCHEMA_VERSION,
         "dataset_row_count": len(dataframe),
         "git_commit": _git_commit(),
         "feature_columns": MODEL_FEATURE_COLUMNS,
@@ -337,16 +496,29 @@ def _metadata(
         "numeric_features": NUMERIC_FEATURES,
         "classification_target": CLASSIFICATION_TARGET,
         "regression_target": REGRESSION_TARGET,
+        "train_validation_test_strategy": split_strategy,
         "train_test_strategy": split_strategy,
         "random_seed": random_seed,
         "class_distribution": {
             "cascade_false": int(class_counts.get(False, 0)),
             "cascade_true": int(class_counts.get(True, 0)),
         },
+        "load_loss_target_distribution": target_distribution,
         "classifier_model": classifier_name,
         "regressor_model": regressor_name,
-        "classifier_metrics": classifier_metrics,
-        "regressor_metrics": regressor_metrics,
+        "classifier_validation_metrics": classifier_validation_metrics,
+        "classifier_test_metrics": classifier_test_metrics,
+        "regressor_validation_metrics": regressor_validation_metrics,
+        "regressor_test_metrics": regressor_test_metrics,
+        # Backward-compatible aliases used by inference and existing reports.
+        "classifier_metrics": classifier_test_metrics,
+        "regressor_metrics": regressor_test_metrics,
+        "all_classifier_validation_metrics": {
+            name: metrics for name, (_, metrics) in classifier_results.items()
+        },
+        "all_regressor_validation_metrics": {
+            name: metrics for name, (_, metrics) in regressor_results.items()
+        },
         "all_classifier_metrics": {
             name: metrics for name, (_, metrics) in classifier_results.items()
         },
@@ -362,13 +534,40 @@ def _metadata(
             "joblib": joblib.__version__,
         },
         "selection_rationale": {
-            "classifier": "highest F1 score, then ROC AUC and recall",
-            "regressor": "lowest MAE on the held-out split",
+            "classifier": (
+                "selected on validation F1, then ROC AUC and recall; final metrics "
+                "are from the untouched grouped test split"
+            ),
+            "regressor": (
+                "selected on validation MAE, then severe-case MAE and RMSE; final "
+                "metrics are from the untouched grouped test split"
+            ),
         },
         "limitations": (
-            "Models are trained only on Tripwire's synthetic simulation scenarios "
-            "and should not be interpreted as real-world grid reliability models."
+            "Models are trained only on Tripwire's synthetic simulation scenarios. "
+            "Load loss is strongly multimodal, including many zero-loss and total-"
+            "blackout outcomes, so the regression estimate has high uncertainty and "
+            "is secondary to cascade probability. These models must not be interpreted "
+            "as real-world grid reliability models."
         ),
+    }
+
+
+def _target_distribution(targets: pd.Series) -> dict[str, dict[str, float | int]]:
+    numeric = targets.astype(float)
+    buckets = {
+        "zero": numeric == 0.0,
+        "moderate": (numeric > 0.0) & (numeric < 50.0),
+        "severe": (numeric >= 50.0) & (numeric < 100.0),
+        "total_blackout": numeric >= 100.0,
+    }
+    total = len(numeric)
+    return {
+        name: {
+            "count": int(mask.sum()),
+            "percent": _round(100.0 * float(mask.sum()) / total) if total else 0.0,
+        }
+        for name, mask in buckets.items()
     }
 
 
@@ -394,12 +593,15 @@ def summarize_training(metadata: dict[str, Any]) -> str:
         f"Dataset rows: {metadata['dataset_row_count']}",
         f"Split strategy: {metadata['train_test_strategy']}",
         f"Class distribution: {metadata['class_distribution']}",
+        f"Load-loss distribution: {metadata['load_loss_target_distribution']}",
         "",
         f"Champion classifier: {metadata['classifier_model']}",
-        f"Classifier metrics: {metadata['classifier_metrics']}",
+        f"Classifier validation metrics: {metadata['classifier_validation_metrics']}",
+        f"Classifier final test metrics: {metadata['classifier_test_metrics']}",
         "",
         f"Champion regressor: {metadata['regressor_model']}",
-        f"Regressor metrics: {metadata['regressor_metrics']}",
+        f"Regressor validation metrics: {metadata['regressor_validation_metrics']}",
+        f"Regressor final test metrics: {metadata['regressor_test_metrics']}",
         "",
         "Top classifier features:",
     ]
