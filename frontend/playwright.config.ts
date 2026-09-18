@@ -9,6 +9,9 @@ const venvPython = resolve(
   process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python",
 );
 const python = existsSync(venvPython) ? `"${venvPython}"` : "python";
+const frontendCommand = process.platform === "win32"
+  ? "set NEXT_PUBLIC_API_URL=http://127.0.0.1:8000&& set NEXT_DIST_DIR=.next-e2e&& pnpm dev --hostname 127.0.0.1 --port 3000"
+  : "NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 NEXT_DIST_DIR=.next-e2e pnpm dev --hostname 127.0.0.1 --port 3000";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -31,9 +34,8 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: "pnpm dev --hostname 127.0.0.1 --port 3000",
+      command: frontendCommand,
       cwd: frontendDir,
-      env: { NEXT_PUBLIC_API_URL: "http://127.0.0.1:8000" },
       url: "http://127.0.0.1:3000",
       reuseExistingServer: true,
       timeout: 120_000,

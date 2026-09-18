@@ -7,7 +7,14 @@ const source = readFileSync(new URL("../components/grid/scenario-state.ts", impo
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } });
 const exportsObject = {};
 new Function("exports", compiled.outputText)(exportsObject);
-const { initialScenario, scenarioReducer, operatingConditions } = exportsObject;
+const { initialScenario, matchingScenarioPreset, scenarioDisplayName, scenarioReducer, operatingConditions } = exportsObject;
+
+const presets = [{
+  id: "severe-cascade",
+  name: "Severe Cascade",
+  initial_failure: { component_type: "line", component_id: "line-101" },
+  operating_condition: operatingConditions.severe,
+}];
 
 const original = { scenario_id: "scenario-a", final_metrics: { load_lost_percent: 100 } };
 const mitigated = { scenario_id: "scenario-a", final_metrics: { load_lost_percent: 5 } };
@@ -71,4 +78,18 @@ test("single failure preserves the scenario component and prediction", () => {
 test("mismatched fingerprints cannot mix comparison results", () => {
   const state = completedScenario();
   assert.equal(scenarioReducer(state, { type: "prediction", result: { scenario_id: "other" }, revision: 0 }), state);
+});
+
+test("scenario name follows the exact current configuration", () => {
+  const presetInput = {
+    presetId: "severe-cascade",
+    profile: "severe",
+    condition: operatingConditions.severe,
+    component: { component_type: "line", component_id: "line-101" },
+  };
+  assert.equal(matchingScenarioPreset(presetInput, presets)?.id, "severe-cascade");
+  assert.equal(scenarioDisplayName(presetInput, presets), "Severe Cascade");
+  assert.equal(scenarioDisplayName({ ...presetInput, condition: { ...presetInput.condition, load_multiplier: 1.25 } }, presets), "Custom Scenario");
+  assert.equal(scenarioDisplayName({ ...presetInput, component: { component_type: "line", component_id: "line-102" } }, presets), "Custom Scenario");
+  assert.equal(scenarioDisplayName(initialScenario().input, presets), "Baseline network");
 });

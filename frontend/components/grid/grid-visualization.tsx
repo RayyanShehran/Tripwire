@@ -7,7 +7,7 @@ import { CircleCheck, CircleX, Network, RotateCcw, LoaderCircle } from "lucide-r
 import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel, type PanelTab, type ActiveAction, type MitigationRecommendation, type MitigationResult, type OperatingProfileKey, type RiskPrediction } from "./info-panel";
 import { fetchGrid, fetchDemoPresets, findMitigations, predictRisk, runCascade, simulateFailure, type ApiComponentType, type ApiDemoPreset, type ApiMitigationRecommendation, type ApiMitigationResponse, type ApiOperatingCondition, type ApiPredictionResponse } from "./api";
-import { initialScenario, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
+import { initialScenario, matchingScenarioPreset, scenarioDisplayName, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
 import { toFlowData } from "./flow-layout";
@@ -24,8 +24,6 @@ export function GridVisualization() {
   const apiBaseUrl = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
   const [scenario, dispatch] = useReducer(scenarioReducer, undefined, initialScenario);
   const { originalCascadeResult, mitigatedCascadeResult } = scenario;
-  const operatingProfile = scenario.input.profile;
-  const selectedPresetId = scenario.input.presetId;
   const cascadeResult = scenario.view === "mitigated"
     ? mitigatedCascadeResult : scenario.view === "original" ? originalCascadeResult : null;
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -224,7 +222,8 @@ export function GridVisualization() {
   }, [cascadeResult, currentStepIndex, isPlaying]);
 
   const system = systemState(grid, cascadeResult, currentStepIndex, activeAction === "cascade");
-  const scenarioName = demoPresets.find((preset) => preset.id === selectedPresetId)?.name ?? (operatingProfile === "baseline" ? "Baseline network" : `${operatingProfile[0].toUpperCase()}${operatingProfile.slice(1)} scenario`);
+  const matchingPreset = matchingScenarioPreset(scenario.input, demoPresets);
+  const scenarioName = scenarioDisplayName(scenario.input, demoPresets);
   return <ReactFlowProvider>
     <header className="topbar">
       <Link className="brand" href="/" aria-label="Tripwire home"><Network aria-hidden="true" /><div><h1>TRIPWIRE</h1><p>Grid Cascade Intelligence</p></div></Link>
@@ -234,7 +233,7 @@ export function GridVisualization() {
       <ActionButton icon={<RotateCcw />} disabled={activeAction !== null} onClick={handleResetScenario} variant="ghost" title="Reset profile, selection, and results">Reset</ActionButton>
     </header>
     <main className="workspace">
-      <ScenarioControls activeAction={activeAction} input={scenario.input} selected={selected} presets={demoPresets}
+      <ScenarioControls activeAction={activeAction} input={scenario.input} matchedPresetId={matchingPreset?.id ?? null} selected={selected} presets={demoPresets}
         onLoadPreset={handleLoadPreset} onProfileChange={handleOperatingProfileChange}
         onConditionChange={(condition) => configureScenario({ ...scenario.input, condition, presetId: null })}
         onClear={() => selectComponent(null)} onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onCascade={handleRunCascade} onMitigation={handleFindMitigation} />

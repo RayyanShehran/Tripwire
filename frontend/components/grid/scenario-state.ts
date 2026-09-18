@@ -1,6 +1,6 @@
 import type {
   ApiCascadeResponse, ApiComponentType, ApiFailureResponse, ApiGridResponse,
-  ApiMitigationResponse, ApiOperatingCondition, ApiPredictionResponse,
+  ApiDemoPreset, ApiMitigationResponse, ApiOperatingCondition, ApiPredictionResponse,
 } from "./api";
 
 export const operatingConditions = {
@@ -37,6 +37,30 @@ export function initialScenario(revision = 0): ScenarioState {
     originalCascadeResult: null, recommendations: null, selectedMitigationRank: null,
     mitigatedCascadeResult: null, view: "baseline",
   };
+}
+
+export function matchingScenarioPreset(input: ScenarioInput, presets: ApiDemoPreset[]) {
+  return presets.find((preset) =>
+    preset.initial_failure.component_type === input.component?.component_type &&
+    preset.initial_failure.component_id === input.component?.component_id &&
+    sameOperatingCondition(preset.operating_condition, input.condition),
+  ) ?? null;
+}
+
+export function scenarioDisplayName(input: ScenarioInput, presets: ApiDemoPreset[]) {
+  const preset = matchingScenarioPreset(input, presets);
+  if (preset) return preset.name;
+  if (!input.component && sameOperatingCondition(input.condition, operatingConditions.baseline)) {
+    return "Baseline network";
+  }
+  return "Custom Scenario";
+}
+
+function sameOperatingCondition(left: ApiOperatingCondition, right: ApiOperatingCondition) {
+  return left.load_multiplier === right.load_multiplier &&
+    left.generation_multiplier === right.generation_multiplier &&
+    left.line_rating_multiplier === right.line_rating_multiplier &&
+    left.dispatch_profile === right.dispatch_profile;
 }
 
 type ResultAction =
