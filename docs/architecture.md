@@ -16,7 +16,7 @@ The frontend is a Next.js application written in TypeScript. It is responsible f
 - Displaying current-step cascade metrics and final summary metrics.
 - Displaying baseline ML risk predictions for the selected component.
 - Displaying simulation-validated mitigation recommendations for selected components.
-- Displaying future decision-support metrics.
+- Displaying prediction accuracy context and simulated mitigation comparisons.
 - Calling the FastAPI backend through a configurable API base URL.
 
 Core frontend packages:
@@ -37,7 +37,7 @@ The backend is a FastAPI application. It is responsible for:
 - Running deterministic cascading-failure simulations from an initial outage.
 - Returning the healthy baseline through reset endpoints.
 - Returning step-by-step cascade state and severity metrics.
-- Generating offline CSV scenario datasets for future ML training.
+- Generating offline CSV scenario datasets for baseline ML training and evaluation.
 - Training and serving baseline ML predictions from synthetic Tripwire scenarios.
 - Generating and ranking mitigation candidates through repeated deterministic cascade simulation.
 
@@ -46,7 +46,7 @@ Core backend packages:
 - pandapower for electrical grid modeling.
 - NetworkX for graph operations.
 - NumPy and pandas for computation.
-- scikit-learn for future ML workflows.
+- scikit-learn for training and serving the current baseline classifier and regressor.
 
 ## Simulation Layer
 
@@ -532,7 +532,7 @@ The repository includes GitHub Actions CI for:
 
 ```text
 backend: install Python dependencies and run pytest
-frontend: install pnpm dependencies, run lint, run production build
+frontend: install pnpm dependencies, run tests, run lint, run production build
 ```
 
 ## Final Limitations

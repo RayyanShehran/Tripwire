@@ -163,6 +163,10 @@ Frontend:
 
 ```powershell
 cd C:\Projects\Tripwire\Tripwire\frontend
+pnpm install --frozen-lockfile
 pnpm lint
+pnpm test
 pnpm build
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```

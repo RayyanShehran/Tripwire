@@ -36,18 +36,18 @@ Tripwire is split into a browser frontend and a Python API backend.
 Current backend libraries:
 
 - `pandapower` for electrical network modeling and power-flow analysis.
-- `NetworkX` for future graph topology analysis.
+- `NetworkX` for topology features used by the scenario dataset and ML models.
 - `NumPy` and `pandas` for numerical and tabular data processing.
-- `scikit-learn` for future vulnerability prediction models.
+- `scikit-learn` for the trained cascade classifier and load-loss regressor.
 
 ## Dataset Pipeline
 
-Tripwire includes an offline dataset generator for future ML work. It is not exposed through the web API and it does not train a model yet.
+Tripwire includes an offline dataset generator that produces the synthetic training data used by the current baseline ML models. Dataset generation and model training remain offline workflows rather than public API operations.
 
 Pipeline:
 
 ```text
-pandapower simulation -> configurable operating profiles -> deterministic cascade outcomes -> CSV dataset -> future ML training
+pandapower simulation -> configurable operating profiles -> deterministic cascade outcomes -> CSV dataset -> model training -> saved prediction pipelines
 ```
 
 Generate the default dataset from `tripwire/backend`:
@@ -476,7 +476,7 @@ pnpm build
 CI:
 
 - GitHub Actions runs backend tests.
-- GitHub Actions runs frontend lint and production build.
+- GitHub Actions runs frontend tests, lint, and the production build after a frozen-lockfile install.
 
 ## Current Scope
 
@@ -500,7 +500,7 @@ Implemented:
 - Current-step emphasis for newly failed components and overloaded lines.
 - Offline scenario dataset generation.
 - Dataset diagnostics script.
-- CSV and metadata output for future ML training.
+- CSV and metadata output used for baseline ML training.
 - Baseline scikit-learn model training.
 - Saved classifier/regressor pipelines and model metadata.
 - `POST /api/predict` endpoint for synthetic-scenario cascade risk prediction.
