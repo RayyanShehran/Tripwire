@@ -9,6 +9,7 @@ CLASSIFICATION_TARGET = "cascade_happened"
 REGRESSION_TARGET = "load_lost_percent"
 
 RiskLevel = Literal["LOW", "MODERATE", "HIGH", "CRITICAL"]
+LoadLossUncertainty = Literal["low", "moderate", "high"]
 
 RISK_THRESHOLDS = {
     "LOW": (0.0, 0.25),
@@ -24,6 +25,7 @@ class PredictionResult(TypedDict):
     scenario_config: dict[str, object]
     cascade_probability: float
     predicted_load_lost_percent: float
+    load_loss_uncertainty: LoadLossUncertainty
     risk_level: RiskLevel
     model_version: str
 

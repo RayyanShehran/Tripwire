@@ -292,6 +292,7 @@ function toRiskPrediction(response: ApiPredictionResponse): RiskPrediction {
     scenarioId: response.scenario_id,
     cascadeProbability: response.cascade_probability,
     predictedLoadLostPercent: response.predicted_load_lost_percent,
+    loadLossUncertainty: response.load_loss_uncertainty ?? "high",
     riskLevel: response.risk_level,
     modelVersion: response.model_version,
   };

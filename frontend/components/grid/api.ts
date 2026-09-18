@@ -132,6 +132,7 @@ export type ApiPredictionResponse = {
   scenario_config: ApiScenarioConfig;
   cascade_probability: number;
   predicted_load_lost_percent: number;
+  load_loss_uncertainty?: "low" | "moderate" | "high";
   risk_level: "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
   model_version: string;
 };

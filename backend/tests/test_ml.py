@@ -91,6 +91,7 @@ def test_saved_artifacts_load_and_predict(ml_dataset) -> None:
     assert 0.0 <= prediction["predicted_load_lost_percent"] <= 100.0
     assert math.isfinite(prediction["cascade_probability"])
     assert math.isfinite(prediction["predicted_load_lost_percent"])
+    assert prediction["load_loss_uncertainty"] in {"low", "moderate", "high"}
 
 
 def test_inference_from_scenario_uses_pre_failure_features_only() -> None:
@@ -129,6 +130,7 @@ def test_predict_api_valid_request() -> None:
     assert 0.0 <= payload["cascade_probability"] <= 1.0
     assert 0.0 <= payload["predicted_load_lost_percent"] <= 100.0
     assert payload["risk_level"] in {"LOW", "MODERATE", "HIGH", "CRITICAL"}
+    assert payload["load_loss_uncertainty"] == "high"
     assert payload["model_version"]
 
 

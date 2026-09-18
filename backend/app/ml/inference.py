@@ -10,7 +10,13 @@ import joblib
 import pandas as pd
 
 from app.ml.features import feature_frame_from_config, validate_feature_payload
-from app.ml.schemas import MODEL_VERSION, ModelBundle, PredictionResult, risk_level
+from app.ml.schemas import (
+    MODEL_VERSION,
+    LoadLossUncertainty,
+    ModelBundle,
+    PredictionResult,
+    risk_level,
+)
 from app.ml.train import CLASSIFIER_ARTIFACT, METADATA_ARTIFACT, MODEL_DIR, REGRESSOR_ARTIFACT
 from app.simulation.grid import GridComponentType
 from app.simulation.config import (
@@ -126,6 +132,20 @@ def predict_from_frame(frame: pd.DataFrame, model_dir: str | Path = MODEL_DIR) -
         "scenario_config": {},
         "cascade_probability": round(probability, 4),
         "predicted_load_lost_percent": round(load_loss, 2),
+        "load_loss_uncertainty": _load_loss_uncertainty(metadata),
         "risk_level": risk_level(probability),
         "model_version": model_version,
     }
+
+
+def _load_loss_uncertainty(metadata: dict[str, Any]) -> LoadLossUncertainty:
+    metrics = metadata.get("regressor_test_metrics") or metadata.get("regressor_metrics") or {}
+    try:
+        mae = float(metrics["mae"])
+    except (KeyError, TypeError, ValueError):
+        return "high"
+    if mae < 7.5:
+        return "low"
+    if mae < 15.0:
+        return "moderate"
+    return "high"

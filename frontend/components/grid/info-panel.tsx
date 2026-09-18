@@ -34,6 +34,7 @@ export type RiskPrediction = {
   scenarioId: string;
   cascadeProbability: number;
   predictedLoadLostPercent: number;
+  loadLossUncertainty: "low" | "moderate" | "high";
   riskLevel: string;
   modelVersion: string;
   actualCascadeOccurred?: boolean;
@@ -119,7 +120,8 @@ export function InfoPanel(props: InfoPanelProps) {
       {tab === "prediction" && <><PanelHeading title="Risk prediction" subtitle="Model estimate / pre-failure" />
         {prediction ? <><div className="risk-value"><span className="eyebrow">Cascade risk</span><strong>{(prediction.cascadeProbability * 100).toFixed(0)}<small>%</small></strong><span className="badge">{prediction.riskLevel}</span></div>
           <ProgressMeter label="Cascade probability" value={prediction.cascadeProbability * 100} />
-          <dl className="detail-rows"><Row label="Predicted load loss" value={percent(prediction.predictedLoadLostPercent)} />
+          <dl className="detail-rows"><Row label="Estimated load loss" value={`~${percent(prediction.predictedLoadLostPercent)}`} />
+          <Row label="Model uncertainty" value={capitalize(prediction.loadLossUncertainty)} />
           {prediction.actualLoadLostPercent !== undefined && <Row label="Original actual loss" value={percent(prediction.actualLoadLostPercent)} />}</dl>
           <p className="model-note">Model {prediction.modelVersion}</p></> : <EmptyState text={busy ? "Estimating risk..." : "No prediction for this scenario"} />}
       </>}
@@ -161,9 +163,10 @@ function Row({ label, value }: { label: string; value: string }) { return <div c
 function percent(value: number) { return `${value.toFixed(1)}%`; }
 function mw(value: number) { return `${value.toFixed(1)} MW`; }
 function nullable(value: number | null | undefined, unit: string) { return value == null ? "N/A" : `${value.toFixed(unit === " p.u." ? 3 : 1)}${unit}`; }
+function capitalize(value: string) { return `${value.charAt(0).toUpperCase()}${value.slice(1)}`; }
 function Comparison({ original, mitigated, prediction }: { original: CascadeSummary | null; mitigated: MitigatedCascadeSummary | null; prediction: RiskPrediction | null }) {
   return <div className="comparison">
-    {prediction && <section><h3 className="eyebrow">Prediction</h3><dl><Row label="Cascade risk" value={percent(prediction.cascadeProbability * 100)} /><Row label="Expected loss" value={percent(prediction.predictedLoadLostPercent)} /></dl></section>}
+    {prediction && <section><h3 className="eyebrow">Prediction</h3><dl><Row label="Cascade risk" value={percent(prediction.cascadeProbability * 100)} /><Row label="Model loss estimate" value={`~${percent(prediction.predictedLoadLostPercent)}`} /></dl></section>}
     {original && <section><h3 className="eyebrow">Original cascade</h3><dl><Row label="Load lost" value={percent(original.loadLostPercent)} /><Row label="Failed lines" value={String(original.failedLines)} /><Row label="Cascade depth" value={String(original.cascadeDepth)} /></dl></section>}
     {mitigated && <section><h3 className="eyebrow">Mitigated</h3><dl><Row label="Total load lost" value={percent(mitigated.loadLostPercent)} /><Row label="Controlled shed" value={mw(mitigated.controlledShedMw)} /><Row label="Involuntary unserved" value={mw(mitigated.involuntaryUnservedMw)} /><Row label="Total unserved" value={mw(mitigated.totalUnservedMw)} /><Row label="Failed lines" value={String(mitigated.failedLines)} /><Row label="Cascade depth" value={String(mitigated.cascadeDepth)} /></dl></section>}
     {original && mitigated && <section className="improvement"><h3 className="eyebrow">Improvement</h3><strong>{(original.loadLostPercent - mitigated.loadLostPercent).toFixed(1)}<small> percentage points</small></strong><p className="muted">Load-loss reduction</p><dl><Row label="Failed lines prevented" value={String(original.failedLines - mitigated.failedLines)} /></dl></section>}

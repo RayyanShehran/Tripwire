@@ -22,7 +22,8 @@ test("core cascade, replay, mitigation, and reset workflow", async ({ page }) =>
 
   await page.getByRole("button", { name: "Predict Risk" }).click();
   await expect(page.getByRole("heading", { name: "Risk prediction" })).toBeVisible();
-  await expect(page.getByText("Predicted load loss")).toBeVisible();
+  await expect(page.getByText("Estimated load loss")).toBeVisible();
+  await expect(page.getByText("High", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Run Cascade" }).click();
   const blackoutStep = page.getByRole("button", { name: /Blackout 100\.0% loss/ });
