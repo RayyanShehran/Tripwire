@@ -117,3 +117,51 @@ def test_solve_api_rejects_invalid_definition_with_structured_errors() -> None:
     detail = response.json()["detail"]
     assert detail["valid"] is False
     assert detail["errors"][0]["component_id"] == "load-east"
+
+
+def test_custom_network_supports_component_deletion_and_added_load() -> None:
+    definition = deepcopy(BUILTIN_GRID_DEFINITION.model_dump(mode="json"))
+    definition["id"] = "edited-grid"
+    definition["lines"] = [line for line in definition["lines"] if line["id"] != "line-302"]
+    definition["loads"].append({
+        "id": "load-new", "name": "New Load", "bus_id": "bus-6",
+        "demand_mw": 10, "reactive_mvar": 2,
+    })
+    response = client.post("/api/grid/solve", json={"grid_definition": definition})
+
+    assert response.status_code == 200
+    grid = response.json()["grid"]
+    assert "line-302" not in {line["id"] for line in grid["lines"]}
+    assert "load-new" in {node["id"] for node in grid["nodes"]}
+    assert grid["metrics"]["original_demand_mw"] == 410
+
+
+def test_custom_network_runs_failure_cascade_and_mitigation() -> None:
+    definition = deepcopy(BUILTIN_GRID_DEFINITION.model_dump(mode="json"))
+    definition["id"] = "custom-analysis-grid"
+    common = {
+        "component_type": "line",
+        "component_id": "line-101",
+        "grid_definition": definition,
+    }
+
+    failure = client.post("/api/failure", json=common)
+    cascade = client.post("/api/cascade", json=common)
+    mitigation = client.post("/api/recommend", json={**common, "max_candidates": 3, "top_n": 1})
+
+    assert failure.status_code == 200
+    assert cascade.status_code == 200
+    assert cascade.json()["steps"]
+    assert mitigation.status_code == 200
+    assert mitigation.json()["candidate_count"] == 3
+
+
+def test_prediction_rejects_modified_topology_truthfully() -> None:
+    definition = deepcopy(BUILTIN_GRID_DEFINITION.model_dump(mode="json"))
+    definition["id"] = "modified-grid"
+    response = client.post("/api/predict", json={
+        "component_type": "line", "component_id": "line-101", "grid_definition": definition,
+    })
+
+    assert response.status_code == 422
+    assert "trained on the built-in Tripwire network" in response.json()["detail"]

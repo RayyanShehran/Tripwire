@@ -20,6 +20,7 @@ from app.simulation.config import (
     scenario_config_payload,
     scenario_fingerprint,
 )
+from app.simulation.definition import GridDefinition
 
 ScenarioStatus = Literal["solved", "blackout"]
 FailureTerminationReason = Literal["solved", "no_slack_source", "total_blackout"]
@@ -69,6 +70,7 @@ def get_baseline_grid() -> GridResponse:
 def simulate_failure(
     failure: ComponentFailure,
     config: ScenarioConfig | None = None,
+    definition: GridDefinition | None = None,
 ) -> FailureScenarioResponse:
     resolved_config = config or make_scenario_config(
         failure.component_type,
@@ -79,7 +81,7 @@ def simulate_failure(
     ):
         raise ValueError("Scenario initial failure does not match requested failure")
 
-    net = build_scenario_network(resolved_config)
+    net = build_scenario_network(resolved_config, definition)
     apply_component_outage(net, failure.component_type, failure.component_id)
 
     termination_reason: FailureTerminationReason = "solved"
@@ -96,7 +98,7 @@ def simulate_failure(
         termination_reason = "total_blackout" if termination_reason == "solved" else termination_reason
 
     return {
-        "scenario_id": scenario_fingerprint(resolved_config),
+        "scenario_id": scenario_fingerprint(resolved_config, definition),
         "scenario_config": scenario_config_payload(resolved_config),
         "status": "blackout" if _is_total_blackout(grid) else "solved",
         "termination_reason": termination_reason,

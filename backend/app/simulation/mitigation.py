@@ -16,6 +16,7 @@ from app.simulation.config import (
     scenario_fingerprint,
 )
 from app.simulation.cascade import CascadeResponse, simulate_cascade
+from app.simulation.definition import GridDefinition
 from app.simulation.grid import GridComponentNotFoundError, GridComponentType
 
 MitigationActionType = Literal["none", "generator_redispatch", "load_shedding"]
@@ -82,6 +83,7 @@ def recommend_mitigations(
     config: ScenarioConfig | None = None,
     max_candidates: int = 6,
     top_n: int = 3,
+    definition: GridDefinition | None = None,
 ) -> RecommendationResponse:
     started = perf_counter()
     config = config or scenario_config(component_type, component_id, operating_condition)
@@ -89,9 +91,10 @@ def recommend_mitigations(
         component_type=component_type,
         component_id=component_id,
         config=config,
+        definition=definition,
     )
     baseline = _outcome(baseline_result)
-    template = build_scenario_network(config)
+    template = build_scenario_network(config, definition)
     candidates = generate_candidate_actions(
         config,
         max_candidates=max_candidates,
@@ -138,7 +141,7 @@ def recommend_mitigations(
     selected = beneficial[:top_n]
 
     return {
-        "scenario_id": scenario_fingerprint(config),
+        "scenario_id": scenario_fingerprint(config, definition),
         "scenario_config": scenario_config_payload(config),
         "baseline": baseline,
         "baseline_cascade_result": baseline_result,
@@ -162,12 +165,16 @@ def generate_candidate_actions(
 ) -> list[MitigationAction]:
     net = net if net is not None else build_scenario_network(config)
     dispatch = _generator_dispatch_targets(config, net=net)
+    capacities = {
+        str(generator["tripwire_id"]): float(generator["max_p_mw"])
+        for _, generator in net.gen.iterrows() if bool(generator["in_service"])
+    }
     actions = [
         action for action in [
             *_generator_redispatch_candidates(config, dispatch=dispatch),
             *_load_shedding_candidates(config, net=net),
         ]
-        if is_feasible_action(config, action, dispatch=dispatch)
+        if is_feasible_action(config, action, dispatch=dispatch, capacities=capacities)
     ]
     unique: list[MitigationAction] = []
     seen: set[tuple[object, ...]] = set()
@@ -186,6 +193,7 @@ def is_feasible_action(
     config: ScenarioConfig,
     action: MitigationAction,
     dispatch: dict[str, float] | None = None,
+    capacities: dict[str, float] | None = None,
 ) -> bool:
     if action.action_type == "generator_redispatch":
         increase_id = str(action.parameters["increase_generator_id"])
@@ -197,7 +205,7 @@ def is_feasible_action(
             and increase_id in dispatch
             and decrease_id in dispatch
             and increase_id != decrease_id
-            and dispatch[increase_id] + delta_mw <= _generator_capacity(config, increase_id)
+            and dispatch[increase_id] + delta_mw <= (capacities or {}).get(increase_id, _generator_capacity(config, increase_id))
             and dispatch[decrease_id] - delta_mw >= 0
         )
 
@@ -229,25 +237,29 @@ def _generator_redispatch_candidates(
 ) -> list[MitigationAction]:
     actions: list[MitigationAction] = []
     dispatch = dispatch or _generator_dispatch_targets(config)
+    generator_ids = sorted(dispatch)
     for percent in (5.0, 10.0):
-        for increase_id, decrease_id in (("gen-south", "gen-harbor"), ("gen-harbor", "gen-south")):
-            delta_mw = round(dispatch[decrease_id] * (percent / 100.0), 4)
-            actions.append(
-                MitigationAction(
-                    action_type="generator_redispatch",
-                    description=(
-                        f"Increase {increase_id} by {delta_mw:.1f} MW and reduce "
-                        f"{decrease_id} by {delta_mw:.1f} MW"
-                    ),
-                    parameters={
-                        "increase_generator_id": increase_id,
-                        "decrease_generator_id": decrease_id,
-                        "delta_mw": delta_mw,
-                        "redispatch_percent": percent,
-                    },
-                    cost=percent,
+        for increase_id in generator_ids:
+            for decrease_id in generator_ids:
+                if increase_id == decrease_id:
+                    continue
+                delta_mw = round(dispatch[decrease_id] * (percent / 100.0), 4)
+                actions.append(
+                    MitigationAction(
+                        action_type="generator_redispatch",
+                        description=(
+                            f"Increase {increase_id} by {delta_mw:.1f} MW and reduce "
+                            f"{decrease_id} by {delta_mw:.1f} MW"
+                        ),
+                        parameters={
+                            "increase_generator_id": increase_id,
+                            "decrease_generator_id": decrease_id,
+                            "delta_mw": delta_mw,
+                            "redispatch_percent": percent,
+                        },
+                        cost=percent,
+                    )
                 )
-            )
     return actions
 
 
@@ -371,6 +383,8 @@ def _generator_dispatch_targets(
 
 
 def _generator_capacity(config: ScenarioConfig, generator_id: str) -> float:
+    if generator_id not in GENERATOR_CAPACITY_MW:
+        return float("inf")
     return round(
         GENERATOR_CAPACITY_MW[generator_id]
         * config.generation_multiplier

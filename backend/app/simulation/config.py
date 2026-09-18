@@ -127,9 +127,11 @@ def scenario_config_payload(config: ScenarioConfig) -> dict[str, Any]:
     }
 
 
-def scenario_fingerprint(config: ScenarioConfig) -> str:
+def scenario_fingerprint(config: ScenarioConfig, definition: GridDefinition | None = None) -> str:
     payload = scenario_config_payload(config)
     payload.pop("preset_id", None)
+    if definition is not None:
+        payload["grid_definition"] = definition.model_dump(mode="json")
     digest_source = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(digest_source.encode("utf-8")).hexdigest()[:16]
     return f"tw-{digest}"

@@ -87,6 +87,7 @@ class OperatingCondition(BaseModel):
 class ScenarioRequest(FailureRequest):
     operating_condition: OperatingCondition = Field(default_factory=OperatingCondition)
     preset_id: str | None = None
+    grid_definition: GridDefinition | None = None
 
 
 class CascadeRequest(ScenarioRequest):
@@ -213,6 +214,7 @@ def simulate_failure(request: ScenarioRequest) -> dict:
         return simulate_single_failure(
             ComponentFailure(request.component_type, request.component_id),
             config=_scenario_config_from_request(request),
+            definition=request.grid_definition,
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -252,6 +254,7 @@ def run_cascade(request: CascadeRequest) -> dict:
             component_id=request.component_id,
             max_steps=request.max_steps,
             config=config,
+            definition=request.grid_definition,
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -272,6 +275,8 @@ def predict_risk(request: PredictionRequest) -> dict:
     start = perf_counter()
     config = _scenario_config_from_request(request)
     try:
+        if request.grid_definition is not None and request.grid_definition.id != BUILTIN_GRID_DEFINITION.id:
+            raise PredictionInputError("Current prediction model was trained on the built-in Tripwire network and is unavailable for modified topology")
         return predict_from_config(
             config,
             model_dir=settings.model_path,
@@ -305,6 +310,7 @@ def recommend_actions(request: RecommendationRequest) -> dict:
             config=config,
             max_candidates=request.max_candidates,
             top_n=request.top_n,
+            definition=request.grid_definition,
         )
     except GridComponentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

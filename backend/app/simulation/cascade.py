@@ -19,6 +19,7 @@ from app.simulation.config import (
     scenario_config_payload,
     scenario_fingerprint,
 )
+from app.simulation.definition import GridDefinition
 
 CASCADE_TRIP_THRESHOLD_PERCENT = 100.0
 DEFAULT_MAX_CASCADE_STEPS = 20
@@ -102,6 +103,7 @@ def simulate_cascade(
     cascade_trip_threshold_percent: float = CASCADE_TRIP_THRESHOLD_PERCENT,
     net_factory: Callable[[], Any] | None = None,
     config: ScenarioConfig | None = None,
+    definition: GridDefinition | None = None,
 ) -> CascadeResponse:
     if max_steps < 0:
         raise ValueError("max_steps must be greater than or equal to 0")
@@ -117,7 +119,7 @@ def simulate_cascade(
     if net_factory is not None:
         net = net_factory()
     elif config is not None:
-        net = build_scenario_network(resolved_config)
+        net = build_scenario_network(resolved_config, definition)
     else:
         net = create_test_grid()
     initial_failure: FailedComponent = {
@@ -185,7 +187,7 @@ def simulate_cascade(
     final_metrics = _final_metrics(steps)
 
     return {
-        "scenario_id": scenario_fingerprint(resolved_config),
+        "scenario_id": scenario_fingerprint(resolved_config, definition),
         "scenario_config": scenario_config_payload(resolved_config),
         "initial_failure": initial_failure,
         "termination_reason": termination_reason,
