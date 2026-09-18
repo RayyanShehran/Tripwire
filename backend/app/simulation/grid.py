@@ -8,6 +8,8 @@ from typing import Any, Literal, TypedDict
 import pandapower as pp
 from pandapower.auxiliary import LoadflowNotConverged
 
+from app.simulation.definition import BUILTIN_GRID_DEFINITION, build_network_from_definition
+
 GridStatus = Literal["healthy", "stressed", "overloaded", "failed"]
 GridNodeType = Literal["generator", "bus", "load"]
 GridComponentType = Literal["bus", "line", "generator", "load"]
@@ -77,116 +79,7 @@ class NamedIndex:
 
 def create_test_grid() -> pp.pandapowerNet:
     """Create Tripwire's small solved transmission network."""
-    net = pp.create_empty_network(name="Tripwire teaching transmission grid")
-
-    bus_specs = [
-        ("north", "North 230 kV Bus"),
-        ("central-a", "Central A 230 kV Bus"),
-        ("central-b", "Central B 230 kV Bus"),
-        ("east", "East 230 kV Bus"),
-        ("south", "South 230 kV Bus"),
-        ("metro", "Metro 230 kV Bus"),
-        ("west", "West 230 kV Bus"),
-        ("harbor", "Harbor 230 kV Bus"),
-    ]
-    buses: dict[str, NamedIndex] = {}
-    for key, name in bus_specs:
-        bus_index = pp.create_bus(net, vn_kv=230.0, name=name)
-        tripwire_id = _bus_id(bus_index)
-        net.bus.loc[bus_index, "tripwire_id"] = tripwire_id
-        net.bus.loc[bus_index, "tripwire_key"] = key
-        buses[key] = NamedIndex(tripwire_id, name, bus_index)
-
-    ext_grid_id = pp.create_ext_grid(
-        net,
-        bus=buses["north"].index,
-        vm_pu=1.01,
-        name="North Ridge Slack Generator",
-    )
-    net.ext_grid.loc[ext_grid_id, "tripwire_id"] = "gen-north"
-
-    generators = {
-        "gen-south": pp.create_gen(
-            net,
-            bus=buses["south"].index,
-            p_mw=150.0,
-            vm_pu=1.01,
-            name="South Thermal Generator",
-        ),
-        "gen-harbor": pp.create_gen(
-            net,
-            bus=buses["harbor"].index,
-            p_mw=95.0,
-            vm_pu=1.0,
-            name="Harbor Gas Generator",
-        ),
-    }
-    for key, index in generators.items():
-        net.gen.loc[index, "tripwire_id"] = key
-
-    loads = {
-        "load-east": pp.create_load(
-            net,
-            bus=buses["east"].index,
-            p_mw=110.0,
-            q_mvar=22.0,
-            name="East Industrial Load",
-        ),
-        "load-metro": pp.create_load(
-            net,
-            bus=buses["metro"].index,
-            p_mw=145.0,
-            q_mvar=31.0,
-            name="Metro Load",
-        ),
-        "load-west": pp.create_load(
-            net,
-            bus=buses["west"].index,
-            p_mw=80.0,
-            q_mvar=16.0,
-            name="West Residential Load",
-        ),
-        "load-harbor": pp.create_load(
-            net,
-            bus=buses["harbor"].index,
-            p_mw=65.0,
-            q_mvar=13.0,
-            name="Harbor Load",
-        ),
-    }
-    for key, index in loads.items():
-        net.load.loc[index, "tripwire_id"] = key
-
-    line_specs = [
-        ("line-101", "L-101 North-Central A", "north", "central-a", 34.0, 1.8),
-        ("line-102", "L-102 Central A-Central B", "central-a", "central-b", 28.0, 1.65),
-        ("line-103", "L-103 Central B-East", "central-b", "east", 24.0, 1.45),
-        ("line-104", "L-104 North-South", "north", "south", 42.0, 1.6),
-        ("line-201", "L-201 South-Central A", "south", "central-a", 26.0, 1.5),
-        ("line-202", "L-202 South-Metro", "south", "metro", 22.0, 1.45),
-        ("line-203", "L-203 Metro-East", "metro", "east", 18.0, 1.25),
-        ("line-301", "Tie-301 Central B-Harbor", "central-b", "harbor", 30.0, 1.35),
-        ("line-302", "Tie-302 Harbor-Metro", "harbor", "metro", 20.0, 1.25),
-        ("line-401", "L-401 Central A-West", "central-a", "west", 31.0, 1.2),
-        ("line-402", "L-402 West-Metro", "west", "metro", 24.0, 1.15),
-        ("line-403", "L-403 West-North", "west", "north", 36.0, 1.1),
-    ]
-
-    for key, name, from_bus, to_bus, length_km, max_i_ka in line_specs:
-        line_index = pp.create_line_from_parameters(
-            net,
-            from_bus=buses[from_bus].index,
-            to_bus=buses[to_bus].index,
-            length_km=length_km,
-            r_ohm_per_km=0.04,
-            x_ohm_per_km=0.28,
-            c_nf_per_km=11.0,
-            max_i_ka=max_i_ka,
-            name=name,
-        )
-        net.line.loc[line_index, "tripwire_id"] = key
-
-    return net
+    return build_network_from_definition(BUILTIN_GRID_DEFINITION)
 
 
 def get_grid_response(
@@ -392,7 +285,7 @@ def _bus_nodes(
         bus_index_int = int(bus_index)
         nodes.append(
             {
-                "id": _bus_id(bus_index_int),
+                "id": _bus_identifier(net, bus_index_int),
                 "name": str(bus["name"]),
                 "type": "bus",
                 "status": bus_statuses[bus_index_int],
@@ -423,7 +316,7 @@ def _generator_nodes(
                 "voltage": _result_value(net.res_bus, bus_index, "vm_pu"),
                 "generation_mw": _result_value(net.res_ext_grid, ext_index, "p_mw"),
                 "load_mw": None,
-                "connected_bus_id": _bus_id(bus_index),
+                "connected_bus_id": _bus_identifier(net, bus_index),
             }
         )
 
@@ -438,7 +331,7 @@ def _generator_nodes(
                 "voltage": _result_value(net.res_bus, bus_index, "vm_pu"),
                 "generation_mw": _result_value(net.res_gen, gen_index, "p_mw"),
                 "load_mw": None,
-                "connected_bus_id": _bus_id(bus_index),
+                "connected_bus_id": _bus_identifier(net, bus_index),
             }
         )
 
@@ -463,7 +356,7 @@ def _load_nodes(
                 "voltage": _result_value(net.res_bus, bus_index, "vm_pu"),
                 "generation_mw": None,
                 "load_mw": _safe_float(load["p_mw"]),
-                "connected_bus_id": _bus_id(bus_index),
+                "connected_bus_id": _bus_identifier(net, bus_index),
             }
         )
 
@@ -482,8 +375,8 @@ def _line_responses(net: pp.pandapowerNet) -> list[GridLineResponse]:
             {
                 "id": str(line["tripwire_id"]),
                 "name": str(line["name"]),
-                "source": _bus_id(int(line["from_bus"])),
-                "target": _bus_id(int(line["to_bus"])),
+                "source": _bus_identifier(net, int(line["from_bus"])),
+                "target": _bus_identifier(net, int(line["to_bus"])),
                 "capacity_mw": capacity_mw,
                 "loading_percent": loading_percent,
                 "status": _line_status(in_service, loading_percent),
@@ -611,3 +504,9 @@ def _safe_float(value: Any) -> float | None:
 
 def _bus_id(bus_index: int) -> str:
     return f"bus-{bus_index}"
+
+
+def _bus_identifier(net: pp.pandapowerNet, bus_index: int) -> str:
+    if "tripwire_id" in net.bus and bus_index in net.bus.index:
+        return str(net.bus.at[bus_index, "tripwire_id"])
+    return _bus_id(bus_index)
