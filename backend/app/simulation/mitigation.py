@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from math import isfinite
 from time import perf_counter
@@ -79,7 +80,7 @@ def recommend_mitigations(
     component_id: str,
     operating_condition: dict[str, Any] | None = None,
     config: ScenarioConfig | None = None,
-    max_candidates: int = 10,
+    max_candidates: int = 6,
     top_n: int = 3,
 ) -> RecommendationResponse:
     started = perf_counter()
@@ -90,14 +91,19 @@ def recommend_mitigations(
         config=config,
     )
     baseline = _outcome(baseline_result)
-    candidates = generate_candidate_actions(config, max_candidates=max_candidates)
+    template = build_scenario_network(config)
+    candidates = generate_candidate_actions(
+        config,
+        max_candidates=max_candidates,
+        net=template,
+    )
     evaluated: list[dict[str, Any]] = []
 
     for action in candidates:
         result = simulate_cascade(
             component_type=component_type,
             component_id=component_id,
-            net_factory=lambda action=action: _mitigated_grid(config, action),
+            net_factory=lambda action=action: _mitigated_grid(template, action),
             config=config,
         )
         outcome = _outcome(result)
@@ -152,21 +158,40 @@ def recommend_mitigations(
 def generate_candidate_actions(
     config: ScenarioConfig,
     max_candidates: int = 24,
+    net: Any | None = None,
 ) -> list[MitigationAction]:
+    net = net if net is not None else build_scenario_network(config)
+    dispatch = _generator_dispatch_targets(config, net=net)
     actions = [
-        action
-        for action in [*_generator_redispatch_candidates(config), *_load_shedding_candidates(config)]
-        if is_feasible_action(config, action)
+        action for action in [
+            *_generator_redispatch_candidates(config, dispatch=dispatch),
+            *_load_shedding_candidates(config, net=net),
+        ]
+        if is_feasible_action(config, action, dispatch=dispatch)
     ]
-    return actions[:max_candidates]
+    unique: list[MitigationAction] = []
+    seen: set[tuple[object, ...]] = set()
+    for action in actions:
+        key = (
+            action.action_type,
+            tuple(sorted((name, str(value)) for name, value in action.parameters.items())),
+        )
+        if key not in seen:
+            seen.add(key)
+            unique.append(action)
+    return unique[:max_candidates]
 
 
-def is_feasible_action(config: ScenarioConfig, action: MitigationAction) -> bool:
+def is_feasible_action(
+    config: ScenarioConfig,
+    action: MitigationAction,
+    dispatch: dict[str, float] | None = None,
+) -> bool:
     if action.action_type == "generator_redispatch":
         increase_id = str(action.parameters["increase_generator_id"])
         decrease_id = str(action.parameters["decrease_generator_id"])
         delta_mw = float(action.parameters["delta_mw"])
-        dispatch = _generator_dispatch_targets(config)
+        dispatch = dispatch or _generator_dispatch_targets(config)
         return (
             delta_mw > 0
             and increase_id in dispatch
@@ -198,9 +223,12 @@ def _summary(recommendations: list[dict[str, Any]]) -> str:
     return "No beneficial mitigation found within the bounded candidate set."
 
 
-def _generator_redispatch_candidates(config: ScenarioConfig) -> list[MitigationAction]:
+def _generator_redispatch_candidates(
+    config: ScenarioConfig,
+    dispatch: dict[str, float] | None = None,
+) -> list[MitigationAction]:
     actions: list[MitigationAction] = []
-    dispatch = _generator_dispatch_targets(config)
+    dispatch = dispatch or _generator_dispatch_targets(config)
     for percent in (5.0, 10.0):
         for increase_id, decrease_id in (("gen-south", "gen-harbor"), ("gen-harbor", "gen-south")):
             delta_mw = round(dispatch[decrease_id] * (percent / 100.0), 4)
@@ -223,10 +251,13 @@ def _generator_redispatch_candidates(config: ScenarioConfig) -> list[MitigationA
     return actions
 
 
-def _load_shedding_candidates(config: ScenarioConfig) -> list[MitigationAction]:
-    net = build_scenario_network(config)
+def _load_shedding_candidates(
+    config: ScenarioConfig,
+    net: Any | None = None,
+) -> list[MitigationAction]:
+    net = net if net is not None else build_scenario_network(config)
     actions: list[MitigationAction] = []
-    for shed_percent in (2.0, 5.0, 10.0):
+    for shed_percent in (5.0, 10.0, 2.0):
         actions.append(
             MitigationAction(
                 action_type="load_shedding",
@@ -238,6 +269,7 @@ def _load_shedding_candidates(config: ScenarioConfig) -> list[MitigationAction]:
                 cost=shed_percent,
             )
         )
+    for shed_percent in (5.0, 10.0, 2.0):
         for _, load in net.load.sort_values("tripwire_id").iterrows():
             bus_id = str(net.bus.at[int(load["bus"]), "tripwire_id"])
             load_mw = float(load["p_mw"])
@@ -257,8 +289,8 @@ def _load_shedding_candidates(config: ScenarioConfig) -> list[MitigationAction]:
     return actions
 
 
-def _mitigated_grid(config: ScenarioConfig, action: MitigationAction):
-    net = build_scenario_network(config)
+def _mitigated_grid(template: Any, action: MitigationAction):
+    net = deepcopy(template)
     apply_mitigation_action(net, action)
     return net
 
@@ -327,8 +359,11 @@ def _adjust_generator(net: Any, generator_id: str, delta_mw: float) -> None:
     net.gen.loc[generator_index, "p_mw"] = dispatch
 
 
-def _generator_dispatch_targets(config: ScenarioConfig) -> dict[str, float]:
-    net = build_scenario_network(config)
+def _generator_dispatch_targets(
+    config: ScenarioConfig,
+    net: Any | None = None,
+) -> dict[str, float]:
+    net = net if net is not None else build_scenario_network(config)
     return {
         str(generator["tripwire_id"]): float(generator["p_mw"])
         for _, generator in net.gen.iterrows() if bool(generator["in_service"])

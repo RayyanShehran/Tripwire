@@ -30,11 +30,25 @@ def severe_line_config() -> ScenarioConfig:
 
 
 def test_mitigation_candidate_generation_is_bounded() -> None:
-    candidates = generate_candidate_actions(severe_line_config(), max_candidates=10)
+    candidates = generate_candidate_actions(severe_line_config(), max_candidates=6)
 
-    assert 1 <= len(candidates) <= 10
+    assert len(candidates) == 6
     assert {candidate.action_type for candidate in candidates}.issubset(
         {"generator_redispatch", "load_shedding"}
+    )
+    keys = {
+        (
+            candidate.action_type,
+            tuple(sorted((key, str(value)) for key, value in candidate.parameters.items())),
+        )
+        for candidate in candidates
+    }
+    assert len(keys) == len(candidates)
+    assert any(
+        candidate.action_type == "load_shedding"
+        and candidate.parameters.get("bus_id") == "all"
+        and candidate.parameters.get("shed_percent") == 5.0
+        for candidate in candidates
     )
 
 
@@ -178,7 +192,8 @@ def test_recommend_api_valid_request() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["baseline"]["load_lost_percent"] == 100.0
-    assert payload["candidate_count"] <= 10
+    assert payload["candidate_count"] == 6
+    assert payload["evaluated_candidate_count"] == 6
     assert payload["recommendations"]
 
 

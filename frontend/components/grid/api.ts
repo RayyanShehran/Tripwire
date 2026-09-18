@@ -349,7 +349,7 @@ export async function findMitigations(
       component_id: componentId,
       operating_condition: operatingCondition,
       preset_id: presetId,
-      max_candidates: 10,
+      max_candidates: 6,
       top_n: 3,
     }),
     cache: "no-store",
