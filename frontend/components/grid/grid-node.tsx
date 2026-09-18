@@ -1,4 +1,5 @@
 "use client";
+import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Factory, UtilityPole, PlugZap, TriangleAlert, Unplug, X } from "lucide-react";
 import type { GridNodeData } from "./types";
@@ -22,6 +23,6 @@ function NodeShell({ data }: { data: GridNodeData }) {
     </div>
   </div>;
 }
-export function GeneratorNode({ data }: GridNodeProps) { return <NodeShell data={data} />; }
-export function BusNode({ data }: GridNodeProps) { return <NodeShell data={data} />; }
-export function LoadNode({ data }: GridNodeProps) { return <NodeShell data={data} />; }
+export const GeneratorNode = memo(function GeneratorNode({ data }: GridNodeProps) { return <NodeShell data={data} />; });
+export const BusNode = memo(function BusNode({ data }: GridNodeProps) { return <NodeShell data={data} />; });
+export const LoadNode = memo(function LoadNode({ data }: GridNodeProps) { return <NodeShell data={data} />; });

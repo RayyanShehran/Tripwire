@@ -7,7 +7,7 @@ import { CircleCheck, CircleX, Network, RotateCcw, LoaderCircle } from "lucide-r
 import { CascadeTimeline } from "./cascade-timeline";
 import { InfoPanel, type PanelTab, type ActiveAction, type MitigationRecommendation, type MitigationResult, type OperatingProfileKey, type RiskPrediction } from "./info-panel";
 import { fetchGrid, fetchDemoPresets, findMitigations, predictRisk, runCascade, simulateFailure, type ApiComponentType, type ApiDemoPreset, type ApiMitigationRecommendation, type ApiMitigationResponse, type ApiOperatingCondition, type ApiPredictionResponse } from "./api";
-import { initialScenario, matchingScenarioPreset, scenarioDisplayName, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
+import { initialScenario, scenarioDisplayName, scenarioReducer, operatingConditions, type ScenarioInput } from "./scenario-state";
 import { BusNode, GeneratorNode, LoadNode } from "./grid-node";
 import { TransmissionLine } from "./transmission-line";
 import { toFlowData } from "./flow-layout";
@@ -34,6 +34,7 @@ export function GridVisualization() {
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
+  const [selectedComponent, setSelectedComponent] = useState<ScenarioInput["component"]>(null);
   const currentCascadeStep = cascadeResult?.steps[currentStepIndex] ?? null;
   const grid = currentCascadeStep?.grid
     ?? (scenario.view === "failure" ? scenario.failure?.grid : null)
@@ -46,7 +47,7 @@ export function GridVisualization() {
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
   const selected = useMemo<SelectedGridElement>(() => {
-    const component = scenario.input.component;
+    const component = selectedComponent;
     if (!component) return null;
     if (component.component_type === "line") {
       const item = flowData.edges.find((edge) => edge.id === component.component_id);
@@ -54,7 +55,7 @@ export function GridVisualization() {
     }
     const item = flowData.nodes.find((node) => node.id === component.component_id);
     return item ? { kind: "node", item } : null;
-  }, [scenario.input.component, flowData]);
+  }, [selectedComponent, flowData]);
   const prediction = useMemo(() => scenario.prediction ? {
     ...toRiskPrediction(scenario.prediction),
     ...(originalCascadeResult ? {
@@ -123,12 +124,13 @@ export function GridVisualization() {
   }, []);
 
   const selectComponent = useCallback((component: ScenarioInput["component"]) => {
-    if (activeAction || component?.component_id === scenario.input.component?.component_id) return;
-    configureScenario({ ...scenario.input, component, presetId: null });
+    if (activeAction || component?.component_id === selectedComponent?.component_id) return;
+    setSelectedComponent(component);
     setPanelTab(component ? "component" : "overview");
-  }, [activeAction, scenario.input, configureScenario]);
+  }, [activeAction, selectedComponent]);
 
   const handleLoadPreset = useCallback((preset: ApiDemoPreset) => {
+    setSelectedComponent(preset.initial_failure);
     configureScenario({
       presetId: preset.id, profile: profileForCondition(preset.operating_condition),
       condition: preset.operating_condition, component: preset.initial_failure,
@@ -141,6 +143,7 @@ export function GridVisualization() {
 
   const handleResetScenario = useCallback(() => {
     dispatch({ type: "reset" });
+    setSelectedComponent(null);
     setPanelTab("overview");
     setCurrentStepIndex(0);
     setIsPlaying(false);
@@ -148,9 +151,14 @@ export function GridVisualization() {
   }, []);
 
   const runScenarioAction = useCallback(async (action: "predict" | "failure" | "cascade" | "mitigation") => {
-    const { component, condition, presetId } = scenario.input;
+    const component = selectedComponent ?? scenario.input.component;
+    const { condition } = scenario.input;
     if (!component || activeAction || !scenario.baseline) return;
-    const revision = scenario.revision;
+    const componentChanged = component.component_type !== scenario.input.component?.component_type ||
+      component.component_id !== scenario.input.component?.component_id;
+    const revision = scenario.revision + (componentChanged ? 1 : 0);
+    const presetId = componentChanged ? null : scenario.input.presetId;
+    if (componentChanged) dispatch({ type: "prepare", component });
     setActiveAction(action);
     setPanelTab(action === "predict" ? "prediction" : action === "mitigation" ? "mitigation" : "overview");
     setIsPlaying(false);
@@ -173,7 +181,7 @@ export function GridVisualization() {
     } finally {
       setActiveAction(null);
     }
-  }, [activeAction, apiBaseUrl, scenario]);
+  }, [activeAction, apiBaseUrl, scenario, selectedComponent]);
 
   const handlePredictRisk = () => { void runScenarioAction("predict"); };
   const handleSimulateFailure = () => { void runScenarioAction("failure"); };
@@ -222,7 +230,6 @@ export function GridVisualization() {
   }, [cascadeResult, currentStepIndex, isPlaying]);
 
   const system = systemState(grid, cascadeResult, currentStepIndex, activeAction === "cascade");
-  const matchingPreset = matchingScenarioPreset(scenario.input, demoPresets);
   const scenarioName = scenarioDisplayName(scenario.input, demoPresets);
   return <ReactFlowProvider>
     <header className="topbar">
@@ -233,7 +240,7 @@ export function GridVisualization() {
       <ActionButton icon={<RotateCcw />} disabled={activeAction !== null} onClick={handleResetScenario} variant="ghost" title="Reset profile, selection, and results">Reset</ActionButton>
     </header>
     <main className="workspace">
-      <ScenarioControls activeAction={activeAction} input={scenario.input} matchedPresetId={matchingPreset?.id ?? null} selected={selected} presets={demoPresets}
+      <ScenarioControls activeAction={activeAction} input={scenario.input} selectedPresetId={scenario.input.presetId} selected={selected} presets={demoPresets}
         onLoadPreset={handleLoadPreset} onProfileChange={handleOperatingProfileChange}
         onConditionChange={(condition) => configureScenario({ ...scenario.input, condition, presetId: null })}
         onClear={() => selectComponent(null)} onPredict={handlePredictRisk} onFailure={handleSimulateFailure} onCascade={handleRunCascade} onMitigation={handleFindMitigation} />

@@ -7,17 +7,17 @@ import type { ActiveAction, OperatingProfileKey } from "./info-panel";
 import type { SelectedGridElement } from "./types";
 
 type Props = {
-  activeAction: ActiveAction; input: ScenarioInput; matchedPresetId: string | null; selected: SelectedGridElement; presets: ApiDemoPreset[];
+  activeAction: ActiveAction; input: ScenarioInput; selectedPresetId: string | null; selected: SelectedGridElement; presets: ApiDemoPreset[];
   onLoadPreset: (preset: ApiDemoPreset) => void; onProfileChange: (profile: OperatingProfileKey) => void;
   onConditionChange: (condition: ApiOperatingCondition) => void; onClear: () => void;
   onPredict: () => void; onFailure: () => void; onCascade: () => void; onMitigation: () => void;
 };
-export function ScenarioControls({ activeAction, input, matchedPresetId, selected, presets, onLoadPreset, onProfileChange, onConditionChange, onClear, onPredict, onFailure, onCascade, onMitigation }: Props) {
+export function ScenarioControls({ activeAction, input, selectedPresetId, selected, presets, onLoadPreset, onProfileChange, onConditionChange, onClear, onPredict, onFailure, onCascade, onMitigation }: Props) {
   const busy = activeAction !== null;
   const disabled = busy || !selected;
   return <aside className="control-rail" aria-label="Scenario controls">
     <section><h2 className="eyebrow">Scenario</h2>
-      <label className="field">Preset<div className="select-wrap"><select disabled={busy} value={matchedPresetId ?? ""} onChange={(event) => { const preset = presets.find((item) => item.id === event.target.value); if (preset) onLoadPreset(preset); }}><option value="" disabled>Custom Scenario</option>{presets.map((preset) => <option value={preset.id} key={preset.id}>{preset.name}</option>)}</select><ChevronDown aria-hidden="true" /></div></label>
+      <label className="field">Preset<div className="select-wrap"><select disabled={busy} value={selectedPresetId ?? ""} onChange={(event) => { const preset = presets.find((item) => item.id === event.target.value); if (preset) onLoadPreset(preset); }}><option value="" disabled>Custom Scenario</option>{presets.map((preset) => <option value={preset.id} key={preset.id}>{preset.name}</option>)}</select><ChevronDown aria-hidden="true" /></div></label>
       <label className="field">Operating profile<div className="select-wrap"><select disabled={busy} value={input.profile} onChange={(event) => onProfileChange(event.target.value as OperatingProfileKey)}><option value="baseline">Baseline</option><option value="stressed">Stressed</option><option value="critical">Critical Demo</option><option value="severe">Severe</option></select><ChevronDown aria-hidden="true" /></div></label>
       <details className="condition-details"><summary>Operating conditions</summary>
         <NumberProfile label="Load multiplier" value={input.condition.load_multiplier} options={[1, 1.25, 1.5]} disabled={busy} onChange={(load_multiplier) => onConditionChange({ ...input.condition, load_multiplier })} />

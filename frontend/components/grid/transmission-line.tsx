@@ -1,9 +1,10 @@
 "use client";
+import { memo } from "react";
 import { BaseEdge, EdgeLabelRenderer, getStraightPath, type EdgeProps } from "@xyflow/react";
 import { TriangleAlert } from "lucide-react";
 import { statusStyles } from "./status";
 import type { GridLineData } from "./types";
-export function TransmissionLine({ id, sourceX, sourceY, targetX, targetY, data, selected }: EdgeProps & { data?: GridLineData }) {
+export const TransmissionLine = memo(function TransmissionLine({ id, sourceX, sourceY, targetX, targetY, data, selected }: EdgeProps & { data?: GridLineData }) {
   let [path, x, y] = getStraightPath({ sourceX, sourceY, targetX, targetY });
   const corridor = sourceX + (data?.routeSide === "left" ? -42 : 42);
   if (data?.routeSide) {
@@ -30,4 +31,4 @@ export function TransmissionLine({ id, sourceX, sourceY, targetX, targetY, data,
       </div>
     </EdgeLabelRenderer>}
   </>;
-}
+});

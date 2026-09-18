@@ -40,11 +40,7 @@ export function initialScenario(revision = 0): ScenarioState {
 }
 
 export function matchingScenarioPreset(input: ScenarioInput, presets: ApiDemoPreset[]) {
-  return presets.find((preset) =>
-    preset.initial_failure.component_type === input.component?.component_type &&
-    preset.initial_failure.component_id === input.component?.component_id &&
-    sameOperatingCondition(preset.operating_condition, input.condition),
-  ) ?? null;
+  return presets.find((preset) => preset.id === input.presetId) ?? null;
 }
 
 export function scenarioDisplayName(input: ScenarioInput, presets: ApiDemoPreset[]) {
@@ -72,6 +68,8 @@ type ResultAction =
 
 export type ScenarioAction =
   | { type: "configure"; input: ScenarioInput }
+  | { type: "prepare"; component: NonNullable<ScenarioInput["component"]> }
+  | { type: "clear-results" }
   | { type: "reset" }
   | { type: "replay"; rank: number }
   | (ResultAction & { revision: number });
@@ -81,6 +79,15 @@ export function scenarioReducer(state: ScenarioState, action: ScenarioAction): S
   if (action.type === "configure") {
     return { ...initialScenario(state.revision + 1), input: action.input };
   }
+  if (action.type === "prepare") {
+    if (sameComponent(state.input.component, action.component)) return state;
+    return clearResults(state, {
+      ...state.input,
+      component: action.component,
+      presetId: null,
+    });
+  }
+  if (action.type === "clear-results") return clearResults(state, state.input);
   if (action.type === "replay") {
     const candidate = state.recommendations?.recommendations.find((item) => item.rank === action.rank);
     if (!candidate || candidate.cascade_result.scenario_id !== state.originalCascadeResult?.scenario_id) return state;
@@ -100,4 +107,20 @@ export function scenarioReducer(state: ScenarioState, action: ScenarioAction): S
     ...state, recommendations: action.result,
     originalCascadeResult: state.originalCascadeResult ?? action.result.baseline_cascade_result,
   };
+}
+
+function clearResults(state: ScenarioState, input: ScenarioInput): ScenarioState {
+  return {
+    ...initialScenario(state.revision + 1),
+    input,
+    baseline: state.baseline,
+  };
+}
+
+function sameComponent(
+  left: ScenarioInput["component"],
+  right: ScenarioInput["component"],
+) {
+  return left?.component_type === right?.component_type &&
+    left?.component_id === right?.component_id;
 }
