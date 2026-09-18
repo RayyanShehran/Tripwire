@@ -4,6 +4,18 @@ export type ApiStatus = "healthy" | "stressed" | "overloaded" | "failed";
 export type ApiNodeType = "generator" | "bus" | "load";
 export type ApiComponentType = "generator" | "bus" | "load" | "line";
 
+export type GridBusDefinition = { id: string; name: string; voltage_kv: number; notes?: string };
+export type GridGeneratorDefinition = { id: string; name: string; bus_id: string; min_mw: number; max_mw: number; setpoint_mw: number; is_slack: boolean; voltage_pu?: number; notes?: string };
+export type GridLoadDefinition = { id: string; name: string; bus_id: string; demand_mw: number; reactive_mvar?: number; notes?: string };
+export type GridLineDefinition = { id: string; name: string; source_bus_id: string; target_bus_id: string; length_km: number; capacity_mw: number; electrical_parameters?: { resistance_ohm_per_km: number; reactance_ohm_per_km: number; capacitance_nf_per_km: number }; notes?: string };
+export type GridDefinition = {
+  id: string; name: string; version: 1;
+  buses: GridBusDefinition[]; generators: GridGeneratorDefinition[]; loads: GridLoadDefinition[]; lines: GridLineDefinition[];
+  metadata?: { description?: string; source_preset?: string | null; tags?: string[] };
+};
+export type GridValidationIssue = { component_id: string | null; field: string | null; message: string; code: string };
+export type GridValidation = { valid: boolean; errors: GridValidationIssue[]; warnings: GridValidationIssue[]; island_count: number };
+
 export type ApiGridNode = {
   id: string;
   name: string;
@@ -221,6 +233,22 @@ export async function fetchGrid(apiBaseUrl: string, condition?: ApiOperatingCond
   return (await response.json()) as ApiGridResponse;
 }
 
+export async function fetchGridDefinition(apiBaseUrl: string): Promise<GridDefinition> {
+  requireApiBaseUrl(apiBaseUrl);
+  const response = await fetch(`${apiBaseUrl}/api/grid/definition`, { cache: "no-store" });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, "Unable to load grid definition"));
+  const payload = await response.json() as { grid_definition: GridDefinition };
+  return payload.grid_definition;
+}
+
+export async function validateGridDefinition(apiBaseUrl: string, definition: GridDefinition): Promise<GridValidation> {
+  return postJson(apiBaseUrl, "/api/grid/validate", { grid_definition: definition }, "Unable to validate grid");
+}
+
+export async function solveGridDefinition(apiBaseUrl: string, definition: GridDefinition, operatingCondition: ApiOperatingCondition): Promise<{ grid: ApiGridResponse; validation: GridValidation; ml_compatible: boolean }> {
+  return postJson(apiBaseUrl, "/api/grid/solve", { grid_definition: definition, operating_condition: operatingCondition }, "Unable to solve grid");
+}
+
 export async function fetchDemoPresets(apiBaseUrl: string): Promise<ApiDemoPreset[]> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/demo-presets`, {
@@ -241,6 +269,7 @@ export async function simulateFailure(
   componentId: string,
   operatingCondition: ApiOperatingCondition,
   presetId: string | null = null,
+  gridDefinition?: GridDefinition,
 ): Promise<ApiFailureResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/failure`, {
@@ -249,6 +278,7 @@ export async function simulateFailure(
       component_id: componentId,
       operating_condition: operatingCondition,
       preset_id: presetId,
+      grid_definition: gridDefinition,
     }),
     cache: "no-store",
     headers: {
@@ -284,6 +314,7 @@ export async function runCascade(
   componentId: string,
   operatingCondition: ApiOperatingCondition,
   presetId: string | null = null,
+  gridDefinition?: GridDefinition,
 ): Promise<ApiCascadeResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/cascade`, {
@@ -292,6 +323,7 @@ export async function runCascade(
       component_id: componentId,
       operating_condition: operatingCondition,
       preset_id: presetId,
+      grid_definition: gridDefinition,
     }),
     cache: "no-store",
     headers: {
@@ -313,6 +345,7 @@ export async function predictRisk(
   componentId: string,
   operatingCondition: ApiOperatingCondition,
   presetId: string | null = null,
+  gridDefinition?: GridDefinition,
 ): Promise<ApiPredictionResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/predict`, {
@@ -321,6 +354,7 @@ export async function predictRisk(
       component_id: componentId,
       operating_condition: operatingCondition,
       preset_id: presetId,
+      grid_definition: gridDefinition,
     }),
     cache: "no-store",
     headers: {
@@ -342,6 +376,7 @@ export async function findMitigations(
   componentId: string,
   operatingCondition: ApiOperatingCondition,
   presetId: string | null = null,
+  gridDefinition?: GridDefinition,
 ): Promise<ApiMitigationResponse> {
   requireApiBaseUrl(apiBaseUrl);
   const response = await fetch(`${apiBaseUrl}/api/recommend`, {
@@ -350,6 +385,7 @@ export async function findMitigations(
       component_id: componentId,
       operating_condition: operatingCondition,
       preset_id: presetId,
+      grid_definition: gridDefinition,
       max_candidates: 6,
       top_n: 3,
     }),
@@ -375,6 +411,15 @@ function requireApiBaseUrl(apiBaseUrl: string) {
   }
 }
 
+async function postJson<T>(apiBaseUrl: string, path: string, body: unknown, fallback: string): Promise<T> {
+  requireApiBaseUrl(apiBaseUrl);
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, fallback));
+  return await response.json() as T;
+}
+
 async function apiErrorMessage(response: Response, fallback: string) {
   if (response.status === 0) {
     return "Backend unavailable. Check that the FastAPI server is running.";
@@ -396,12 +441,12 @@ async function apiErrorMessage(response: Response, fallback: string) {
     return "Tripwire backend is not ready. Check simulator and model artifacts.";
   }
 
-  if (response.status === 422) {
-    return "The selected scenario settings are invalid.";
-  }
-
   if (typeof detail === "string" && detail.length > 0 && !detail.includes("Traceback")) {
     return detail;
+  }
+
+  if (response.status === 422) {
+    return "The selected scenario settings are invalid.";
   }
 
   return `${fallback}. Backend returned ${response.status}.`;
