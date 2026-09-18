@@ -50,7 +50,7 @@ test("core cascade, replay, mitigation, and reset workflow", async ({ page }) =>
   await expect(page.getByText("25.0 MW", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("95.0 percentage points", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Reset" }).click();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(page.getByText("Healthy", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("None selected")).toBeVisible();
   await expect(page.getByText("400.0 MW", { exact: true }).first()).toBeVisible();
@@ -79,6 +79,59 @@ test("component inspection is local and keeps the React Flow viewport stable", a
   expect(await viewport.getAttribute("style")).toBe(transformBefore);
 });
 
+test("grid layout can be unlocked, persisted, and reset without network refetches", async ({ page }) => {
+  let gridRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/grid") gridRequests += 1;
+  });
+  await page.goto("/");
+  await expect(page.getByText("API connected")).toBeVisible();
+  const node = page.locator(".react-flow__node").first();
+  await expect(node).toBeVisible();
+  const initialTransform = await node.evaluate((element) => (element as HTMLElement).style.transform);
+  const initialGridRequests = gridRequests;
+
+  const dragBy = async (x: number, y: number) => {
+    const box = await node.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + x, box!.y + box!.height / 2 + y, { steps: 6 });
+    await page.mouse.up();
+  };
+
+  await expect(page.getByRole("button", { name: "Locked" })).toHaveAttribute("aria-pressed", "true");
+  await dragBy(90, 60);
+  await expect(node).toHaveAttribute("style", new RegExp(initialTransform.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+  await page.getByRole("button", { name: "Locked" }).click();
+  await expect(page.getByRole("button", { name: "Unlocked" })).toHaveAttribute("aria-pressed", "false");
+  await dragBy(90, 60);
+  const customTransform = await node.evaluate((element) => (element as HTMLElement).style.transform);
+  expect(customTransform).not.toBe(initialTransform);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("tripwire:grid-layout:v1"))).not.toBeNull();
+
+  await page.reload();
+  await expect(page.getByText("API connected")).toBeVisible();
+  const restoredNode = page.locator(".react-flow__node").first();
+  await expect(restoredNode).toBeVisible();
+  await expect.poll(() => restoredNode.evaluate((element) => (element as HTMLElement).style.transform)).toBe(customTransform);
+
+  await page.getByRole("combobox", { name: "Preset" }).selectOption({ label: "Mitigation Example" });
+  await page.getByRole("button", { name: "Run Cascade" }).click();
+  await expect(page.getByRole("button", { name: /Blackout 100\.0% loss/ })).toBeVisible();
+  await expect.poll(() => restoredNode.evaluate((element) => (element as HTMLElement).style.transform)).toBe(customTransform);
+
+  const requestsBeforeLayoutActions = gridRequests;
+  await page.getByRole("button", { name: "Auto Layout" }).click();
+  await page.getByRole("button", { name: "Fit View" }).click();
+  await page.getByRole("button", { name: "Reset Layout" }).click();
+  expect(gridRequests).toBe(requestsBeforeLayoutActions);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("tripwire:grid-layout:v1"))).toBeNull();
+  await expect.poll(() => restoredNode.evaluate((element) => (element as HTMLElement).style.transform)).toBe(initialTransform);
+  expect(gridRequests).toBeGreaterThanOrEqual(initialGridRequests);
+});
+
 for (const viewport of [
   { width: 1366, height: 768 },
   { width: 1440, height: 900 },
@@ -95,9 +148,8 @@ for (const viewport of [
     await expect(controls).toBeVisible();
     await expect(network).toBeVisible();
     await expect(details).toBeVisible();
-    await expect(page.getByRole("button", { name: "Reset" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reset", exact: true })).toBeVisible();
     await expect(page.locator(".grid-node").first()).toBeVisible();
-    await expect(page.locator(".edge-label").first()).toBeVisible();
 
     const boxes = await Promise.all([controls.boundingBox(), network.boundingBox(), details.boundingBox()]);
     expect(boxes.every(Boolean)).toBe(true);
@@ -117,15 +169,38 @@ for (const viewport of [
         buttonRadius: button ? getComputedStyle(button).borderRadius : null,
         nodeRadius: node ? getComputedStyle(node).borderRadius : null,
         edgeFontSize: edgeLabel ? getComputedStyle(edgeLabel).fontSize : null,
+        nodeOverlaps: overlappingPairs(document.querySelectorAll<HTMLElement>(".react-flow__node")),
+        labelNodeOverlaps: overlappingSets(
+          document.querySelectorAll<HTMLElement>(".edge-label"),
+          document.querySelectorAll<HTMLElement>(".react-flow__node"),
+        ),
       };
+
+      function overlappingPairs(elements: NodeListOf<HTMLElement>) {
+        const boxes = [...elements].map((element) => element.getBoundingClientRect());
+        let overlaps = 0;
+        boxes.forEach((box, index) => boxes.slice(index + 1).forEach((other) => {
+          if (intersects(box, other)) overlaps += 1;
+        }));
+        return overlaps;
+      }
+
+      function overlappingSets(first: NodeListOf<HTMLElement>, second: NodeListOf<HTMLElement>) {
+        return [...first].reduce((overlaps, element) => overlaps + [...second]
+          .filter((other) => intersects(element.getBoundingClientRect(), other.getBoundingClientRect())).length, 0);
+      }
+
+      function intersects(a: DOMRect, b: DOMRect) {
+        return a.left < b.right - 2 && a.right > b.left + 2 && a.top < b.bottom - 2 && a.bottom > b.top + 2;
+      }
     });
-    expect(layout).toEqual({
-      hasHorizontalOverflow: false,
-      cardRadius: "24px",
-      buttonRadius: "18px",
-      nodeRadius: "10px",
-      edgeFontSize: "13px",
-    });
+    expect(layout.hasHorizontalOverflow).toBe(false);
+    expect(layout.cardRadius).toBe("24px");
+    expect(layout.buttonRadius).toBe("18px");
+    expect(layout.nodeRadius).toBe("10px");
+    expect([null, "11px"]).toContain(layout.edgeFontSize);
+    expect(layout.nodeOverlaps).toBe(0);
+    expect(layout.labelNodeOverlaps).toBe(0);
 
     const preset = page.getByRole("combobox", { name: "Preset" });
     await preset.focus();

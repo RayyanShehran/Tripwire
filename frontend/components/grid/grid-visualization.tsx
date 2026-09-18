@@ -325,7 +325,7 @@ export function GridVisualization() {
                 onNodeClick={(_, node) => selectComponent({ component_type: node.type as ApiComponentType, component_id: node.id })}
                 onEdgeClick={(_, edge) => { if (!edge.id.startsWith("connection-")) selectComponent({ component_type: "line", component_id: edge.id }); }}>
                 <Background color="var(--color-hairline)" gap={20} size={1} />
-                <Controls showInteractive={false} />
+                <Controls showFitView={false} showInteractive={false} />
               </ReactFlow>}
           </div>
           <footer className="network-legend" aria-label="Network status legend">{["Healthy", "Stressed", "Overloaded", "Failed", "Unsupplied"].map((status) => <span key={status}><i className={`legend-line legend-${status.toLowerCase()}`} />{status}</span>)}</footer>
