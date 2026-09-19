@@ -9,9 +9,9 @@ Production URLs:
 - Frontend: https://tripwire-eta.vercel.app
 - Backend: https://tripwire-api-4ecd.onrender.com
 
-The Grid Scenario Builder routes and complete custom-grid workflow were verified
-in production on September 19, 2026 at commit
-`4b43cf822724621af223da8f7e4817e6a04eb5f6`.
+The deployed application code and complete Grid Scenario Builder workflow were
+verified in production on September 19, 2026. Release evidence, measured outcomes,
+and the audit record are documented in `docs/final-results.md`.
 
 Tripwire remains a university/demo project; its results are based on synthetic simulation data.
 
@@ -471,7 +471,8 @@ Recommended presentation path:
 
 ## Screenshots / Demo
 
-Use `docs/screenshots.md` as the capture checklist before submission.
+The final 1440 x 900 evidence set is stored in `docs/screenshots/`. See
+`docs/screenshots.md` for the indexed inventory and reproducible capture command.
 
 Submission support docs:
 
@@ -480,6 +481,8 @@ Submission support docs:
 - `docs/screenshots.md`
 - `docs/api-examples.md`
 - `docs/architecture.md`
+- `docs/final-results.md`
+- `docs/release-notes-v1.0.0-demo.md`
 
 ### Frontend
 
@@ -512,6 +515,8 @@ Frontend:
 pnpm lint
 pnpm test
 pnpm build
+pnpm test:e2e
+pnpm release:evidence
 ```
 
 CI:
@@ -575,3 +580,11 @@ Not implemented yet:
 - ML metrics apply only to generated Tripwire simulation scenarios.
 - Mitigation recommendations are simulation-derived and not guaranteed blackout prevention.
 - The Render free service sleeps after inactivity, so its first request can take 50 seconds or more.
+
+## Release Candidate
+
+The proposed release name is `v1.0.0-demo`. It is a university demonstration
+release, not a utility operations product. No Git tag is created by the release
+audit. See `CHANGELOG.md` and `docs/release-notes-v1.0.0-demo.md` for the frozen
+scope and `docs/final-results.md` for exact dataset, model, simulation, test, and
+production-smoke results.

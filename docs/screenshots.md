@@ -1,17 +1,30 @@
-# Screenshot Checklist
+# Release Screenshots
 
-Capture these screenshots before presentation or submission:
+The release evidence set was captured from the deployed application at a consistent
+1440 x 900 viewport. Files are stored in `docs/screenshots/`.
 
-- Healthy grid baseline with all major nodes visible.
-- Component selection side panel for a transmission line.
-- Demo preset controls with **Severe Cascade** selected.
-- Prediction panel showing cascade probability and predicted load loss.
-- Cascade timeline at the initial failure step.
-- Cascade timeline at a secondary failure step with overloaded/failed lines visible.
-- Final blackout or severe-case summary.
-- Mitigation recommendations panel.
-- Before/after mitigation comparison in the demo summary.
-- Dataset statistics from `scripts/analyze_dataset.py`.
-- Model evaluation results from `backend/models/model_metadata.json`.
-- Backend test run showing passing tests.
-- Frontend production build showing success.
+| File | Evidence |
+| --- | --- |
+| `01-healthy-grid.png` | Healthy solved teaching network and baseline metrics |
+| `02-component-inspection.png` | Selected component details |
+| `03-grid-editor.png` | Grid Scenario Builder entry state |
+| `04-custom-grid.png` | Valid custom grid with an added bus, generator, load, and line |
+| `05-risk-prediction.png` | Severe-preset ML risk prediction |
+| `06-cascade-start.png` | Initial failure step |
+| `07-cascade-midpoint.png` | Secondary cascade step |
+| `08-blackout.png` | Final total-blackout state |
+| `09-timeline.png` | Cascade replay and timeline controls |
+| `10-mitigation-recommendation.png` | Ranked mitigation recommendation |
+| `11-before-after-comparison.png` | Original versus mitigated outcome |
+| `12-saved-custom-scenario.png` | Saved custom scenario restored from browser storage |
+
+Regenerate the production smoke evidence from `frontend/`:
+
+```powershell
+pnpm release:evidence
+```
+
+Override `TRIPWIRE_FRONTEND_URL` or `TRIPWIRE_API_URL` to test another deployment.
+The runner checks `/health`, `/ready`, `/api/grid`, component selection, grid CRUD,
+validation, drag layout, save/reload, JSON export/import, custom-grid analysis,
+prediction, cascade playback, mitigation, comparison, and reset before it succeeds.

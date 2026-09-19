@@ -209,26 +209,55 @@ The frontend keeps the original unmitigated cascade and the replayed mitigated c
 
 ```mermaid
 flowchart LR
-  Frontend[Next.js Frontend]
-  API[FastAPI API]
-  Grid[Grid Simulation]
-  Cascade[Cascade Engine]
-  Dataset[Synthetic Dataset]
-  ML[ML Prediction]
-  Mitigation[Mitigation Engine]
-  Results[Results And Timeline]
+  subgraph Browser[Browser / Vercel]
+    UI[Next.js UI]
+    Flow[React Flow network]
+    Editor[Grid Scenario Builder]
+    Timeline[Cascade timeline and results]
+    Local[(Browser local storage)]
+    UI --> Flow
+    UI --> Editor
+    UI --> Timeline
+    Editor <--> Local
+  end
 
-  Frontend --> API
-  API --> Grid
-  Grid --> Cascade
-  Cascade --> Results
-  Cascade --> Dataset
-  Dataset --> ML
-  API --> ML
-  API --> Mitigation
-  Mitigation --> Cascade
-  Mitigation --> Results
-  Results --> Frontend
+  subgraph APIService[FastAPI / Render]
+    API[Typed API routes]
+    Definition[Grid definition and validation]
+    Scenario[Scenario configuration]
+    PowerFlow[pandapower power flow]
+    Cascade[Deterministic cascade engine]
+    Mitigation[Mitigation candidate search]
+    Inference[scikit-learn inference]
+    Models[(Versioned model artifacts)]
+    API --> Definition
+    API --> Scenario
+    Definition --> PowerFlow
+    Scenario --> PowerFlow
+    PowerFlow --> Cascade
+    API --> Mitigation
+    Mitigation --> Cascade
+    API --> Inference
+    Models --> Inference
+  end
+
+  subgraph Offline[Offline dataset and training]
+    Generator[Synthetic scenario generator]
+    Dataset[(CSV and metadata)]
+    Training[Grouped train/validation/test training]
+    Diagnostics[Dataset diagnostics]
+    Generator --> Dataset
+    Dataset --> Training
+    Dataset --> Diagnostics
+    Training --> Models
+  end
+
+  UI <-->|JSON over HTTPS| API
+  Scenario --> Generator
+  Cascade --> Generator
+  Cascade --> Timeline
+  Mitigation --> Timeline
+  Inference --> Timeline
 ```
 
 ## Demo Presets
