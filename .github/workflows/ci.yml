@@ -62,8 +62,8 @@ jobs:
         working-directory: frontend
         run: pnpm build
 
-  browser-smoke:
-    name: Browser smoke
+  browser-tests:
+    name: Browser tests
     runs-on: ubuntu-latest
     needs: [backend, frontend]
     steps:
@@ -101,6 +101,6 @@ jobs:
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run component-selection smoke test
+      - name: Run Playwright suite in Chromium
         working-directory: frontend
-        run: pnpm exec playwright test --grep "component inspection"
+        run: pnpm exec playwright test
