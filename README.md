@@ -29,6 +29,7 @@ tripwire/
 Tripwire is split into a browser frontend and a Python API backend.
 
 - The frontend renders the interactive transmission-network interface with generators, buses, loads, transmission lines, solved metrics, selection details, single-component failure controls, and cascade timeline playback.
+- The Grid Scenario Builder edits a versioned electrical definition independently from operating conditions and visual layout. It supports component CRUD, validation, undo/redo, autosaved drafts, named browser presets, and JSON import/export.
 - The backend exposes stateless API endpoints for health checks, the solved baseline grid, one-off component failure simulation, deterministic cascade simulation, baseline reset, and synthetic-scenario ML risk prediction.
 - The backend recommends mitigation actions by simulating bounded intervention candidates and ranking their actual simulated outcomes.
 - The frontend communicates with the backend through the `NEXT_PUBLIC_API_URL` environment variable.
@@ -175,6 +176,24 @@ The backend creates a small 230 kV teaching network with:
 
 The backend runs a normal pandapower power-flow calculation before returning grid data. The baseline scenario is intentionally healthy, with all components in service and all line loading below the stressed threshold.
 
+The built-in grid is itself a serializable `GridDefinition`; it does not use a separate hardcoded simulator path. `build_network_from_definition()` maps buses, generators, loads, and lines into pandapower for both built-in and custom scenarios.
+
+## Grid Scenario Builder
+
+Use **Edit Grid** to enter a mode where simulation actions are disabled and topology editing is enabled. Supported operations include adding, editing, and removing buses, generators, loads, and transmission lines. Removing a connected bus requires explicit confirmation to remove its dependent components.
+
+Tripwire separates:
+
+- Network model: electrical topology and component parameters.
+- Operating scenario: load, generation, dispatch, rating, and initial-failure settings.
+- Visual layout: positions, layout lock, zoom-oriented display options, and label visibility.
+
+Editor history is bounded to 50 snapshots and covers component changes and node movement. Analysis results are invalidated after electrical changes. Validation returns hard errors separately from islanding warnings; valid unsupplied islands remain representable and solve with finite metrics.
+
+Named user scenarios and the current draft are stored in browser local storage using schema version 1. Built-in presets remain read-only and can be duplicated. Exported JSON contains the grid definition, operating condition, layout, display settings, metadata, and `schema_version`. Imported files are schema-checked locally and electrically validated by the backend before analysis.
+
+Deterministic failure, cascade, and mitigation APIs accept custom definitions. The current ML model is intentionally unavailable for modified topology because it was trained only on the built-in Tripwire network.
+
 Status thresholds:
 
 - Healthy: line loading below 80%.
@@ -188,6 +207,9 @@ Status thresholds:
 GET /health
 GET /ready
 GET /api/grid
+GET /api/grid/definition
+POST /api/grid/validate
+POST /api/grid/solve
 GET /api/demo-presets
 POST /api/failure
 POST /api/cascade
@@ -200,7 +222,11 @@ POST /api/recommend
 Scenario endpoints do not share hidden simulation state:
 
 - `GET /api/grid` returns the healthy solved baseline by default; operating-condition query parameters return the matching pre-failure grid.
+- `GET /api/grid/definition` returns the versioned built-in electrical definition.
+- `POST /api/grid/validate` returns structured errors, warnings, and island count without solving.
+- `POST /api/grid/solve` validates and solves a submitted definition and reports ML compatibility.
 - `POST /api/failure`, `/api/cascade`, `/api/predict`, and `/api/recommend` use the same operating-condition fields and deterministic scenario fingerprint.
+- Failure, cascade, and recommendation requests may include `grid_definition`; prediction rejects modified topology with a truthful compatibility error.
 - `POST /api/failure` starts from the requested operating condition, applies one requested outage, and returns that solved or blackout scenario.
 - `POST /api/cascade` starts from the same requested operating condition, applies one requested initial outage, and then trips overloaded lines step by step.
 - `POST /api/reset` and `GET /api/reset` return the healthy baseline.
@@ -519,15 +545,21 @@ Implemented:
 - Frontend status legend, help text, and methodology/limitations panel.
 - Backend and frontend ignore files.
 - GitHub Actions CI workflow.
+- Versioned GridDefinition builder and structured network validation.
+- Analyze/Edit Grid modes with bus, generator, load, and line CRUD.
+- Bounded undo/redo for electrical edits and visual movement.
+- Autosaved drafts, custom presets, duplicate/rename/delete, and JSON import/export.
+- Stateless solve, failure, cascade, and mitigation support for custom grids.
 
 Not implemented yet:
 
-- Interactive grid editor.
 - Real utility dataset ingestion.
 
 ## Limitations
 
 - The network is a synthetic 8-bus teaching model.
+- Scenario persistence is browser-local; there are no user accounts or cloud synchronization.
+- Transmission lines are added through the properties form; canvas connection drawing is not included in this version.
 - Operating conditions are simplified and generated for simulation coverage.
 - Results are not validated against real utility data.
 - Tripwire is not intended for operational grid control.

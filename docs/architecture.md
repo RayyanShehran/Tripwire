@@ -153,6 +153,9 @@ Current endpoints:
 GET /health
 GET /ready
 GET /api/grid
+GET /api/grid/definition
+POST /api/grid/validate
+POST /api/grid/solve
 GET /api/demo-presets
 POST /api/failure
 POST /api/cascade
@@ -177,6 +180,24 @@ POST /api/recommend -> baseline simulation + bounded intervention simulations
 ```
 
 No endpoint inherits outages from a previous request. This keeps repeated tests deterministic and avoids hidden process-level scenario state.
+
+## Grid Definition And Editor State
+
+`backend/app/simulation/definition.py` defines schema version 1 for buses, generators, loads, lines, electrical line parameters, and metadata. The built-in teaching grid is represented by the same schema used for imported and user-created grids. `build_network_from_definition()` is the only topology-to-pandapower construction path.
+
+Validation checks global ID uniqueness, bus references, voltage compatibility, line parameters, generator limits, finite values, source/slack configuration, and load values. Disconnected topology is allowed when structurally valid: unsupplied islands and isolated buses are warnings, not schema errors.
+
+The frontend keeps three independent state domains:
+
+```text
+GridDefinition       electrical topology and ratings
+OperatingCondition   multipliers, dispatch, and initial failure
+VisualLayout         positions, lock state, and display options
+```
+
+`grid-editor-state.ts` owns immutable CRUD helpers, bounded undo/redo, schema-versioned scenario documents, local preset storage, draft autosave, and import parsing. Electrical edits clear stale prediction/cascade/mitigation results. Visual movement never changes the submitted electrical definition.
+
+Custom API requests remain stateless by carrying `grid_definition` in the request body. Deterministic failure, cascade, and mitigation use the submitted components. ML compatibility requires an exact match with the built-in definition; modified topology is rejected rather than scored by an incompatible model.
 
 Prediction, single failure, cascade, and recommendation requests are normalized into the same `ScenarioConfig`. The configuration contains the operating multipliers, dispatch profile, initial component failure, optional preset identifier, and seed. Every scenario network is created by `build_scenario_network(config)`, and responses expose a deterministic `scenario_id` that excludes the mitigation action. Baseline and mitigation candidates therefore differ only by the intervention.
 

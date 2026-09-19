@@ -38,6 +38,22 @@ Response shape:
 }
 ```
 
+## Custom grid definition endpoints
+
+```powershell
+$definition = (Invoke-RestMethod http://127.0.0.1:8000/api/grid/definition).grid_definition
+
+Invoke-RestMethod http://127.0.0.1:8000/api/grid/validate `
+  -Method Post -ContentType "application/json" `
+  -Body (@{ grid_definition = $definition } | ConvertTo-Json -Depth 20)
+
+Invoke-RestMethod http://127.0.0.1:8000/api/grid/solve `
+  -Method Post -ContentType "application/json" `
+  -Body (@{ grid_definition = $definition; operating_condition = @{ load_multiplier = 1; generation_multiplier = 1; line_rating_multiplier = 1; dispatch_profile = "balanced" } } | ConvertTo-Json -Depth 20)
+```
+
+Validation responses contain `valid`, structured `errors`, structured `warnings`, and `island_count`. A custom definition can also be supplied as `grid_definition` in failure, cascade, and recommendation request bodies. Prediction accepts only an exact built-in definition because the saved model was trained for that topology.
+
 ## POST /api/predict
 
 ```powershell
