@@ -1,5 +1,25 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("backend cold start is explained and can be retried", async ({ page }) => {
+  let backendAvailable = false;
+  await page.route("http://127.0.0.1:8000/**", async (route) => {
+    if (backendAvailable) await route.continue();
+    else await route.abort("connectionrefused");
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("Starting simulation backend...")).toBeVisible();
+  await expect(page.getByText("Backend starting")).toBeVisible();
+  const retry = page.getByRole("button", { name: "Retry connection" });
+  await expect(retry).toBeVisible();
+
+  backendAvailable = true;
+  await retry.click();
+  await expect(page.getByText("API connected")).toBeVisible();
+  await expect(page.locator(".grid-node").first()).toBeVisible();
+  await expect(page.getByText("Starting simulation backend...")).toHaveCount(0);
+});
+
 async function watchNetwork(page: Page) {
   const requests: string[] = [];
   page.on("request", request => {

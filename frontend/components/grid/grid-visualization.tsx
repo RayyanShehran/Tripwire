@@ -34,7 +34,8 @@ export function GridVisualization() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [panelTab, setPanelTab] = useState<PanelTab>("overview");
-  const [apiStatus, setApiStatus] = useState<"checking" | "connected" | "unavailable">("checking");
+  const [apiStatus, setApiStatus] = useState<"checking" | "starting" | "connected" | "unavailable">("checking");
+  const [connectionRevision, setConnectionRevision] = useState(0);
   const [activeAction, setActiveAction] = useState<ActiveAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [demoPresets, setDemoPresets] = useState<ApiDemoPreset[]>([]);
@@ -74,6 +75,7 @@ export function GridVisualization() {
   const [nodes, setNodes, onNodesChange] = useNodesState(flowData.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowData.edges);
   const nodesRef = useRef<GridNode[]>(flowData.nodes);
+  const startupDeadlineRef = useRef(Date.now() + 75_000);
   const savedPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
   const savedLayoutLoadedRef = useRef(false);
   const selected = useMemo<SelectedGridElement>(() => {
@@ -96,6 +98,18 @@ export function GridVisualization() {
   const mitigation = scenario.recommendations ? toMitigationResult(scenario.recommendations) : null;
   const selectedMitigation = mitigation?.recommendations.find((item) => item.rank === scenario.selectedMitigationRank) ?? null;
 
+  const reportStartupError = useCallback((error: unknown, fallback: string) => {
+    const message = error instanceof Error ? error.message : fallback;
+    const likelyColdStart = /failed to fetch|networkerror|backend returned 50[234]|backend is not ready|backend unavailable/i.test(message);
+    if (likelyColdStart && Date.now() < startupDeadlineRef.current) {
+      setApiStatus("starting");
+      setErrorMessage(null);
+      return;
+    }
+    setApiStatus("unavailable");
+    setErrorMessage(message);
+  }, []);
+
   useEffect(() => {
     let active = true;
     fetchGridDefinition(apiBaseUrl).then((definition) => {
@@ -110,9 +124,9 @@ export function GridVisualization() {
         setValidation(localValidation(restored.grid_definition));
       }
       setUserPresets(readPresets(window.localStorage));
-    }).catch((error: unknown) => setErrorMessage(error instanceof Error ? error.message : "Unable to load the editable grid model"));
+    }).catch((error: unknown) => { if (active) reportStartupError(error, "Unable to load the editable grid model"); });
     return () => { active = false; };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, connectionRevision, reportStartupError]);
 
   useEffect(() => {
     let active = true;
@@ -120,13 +134,13 @@ export function GridVisualization() {
       try {
         const response = await fetch(`${apiBaseUrl}/health`, { signal: AbortSignal.timeout(5000), cache: "no-store" });
         const payload = await response.json() as { status?: string };
-        if (active) setApiStatus(response.ok && payload.status === "ok" ? "connected" : "unavailable");
-      } catch { if (active) setApiStatus("unavailable"); }
+        if (active) setApiStatus(response.ok && payload.status === "ok" ? "connected" : Date.now() < startupDeadlineRef.current ? "starting" : "unavailable");
+      } catch { if (active) setApiStatus(Date.now() < startupDeadlineRef.current ? "starting" : "unavailable"); }
     };
     void check();
-    const timer = window.setInterval(() => { void check(); }, 15000);
+    const timer = window.setInterval(() => { void check(); }, 5000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, connectionRevision]);
 
   useEffect(() => {
     if (!savedLayoutLoadedRef.current && flowData.nodes.length) {
@@ -166,11 +180,9 @@ export function GridVisualization() {
     let active = true;
     fetchDemoPresets(apiBaseUrl).then((presets) => {
       if (active) setDemoPresets(presets);
-    }).catch((error: unknown) => {
-      if (active) setErrorMessage(error instanceof Error ? error.message : "Unable to load presets");
-    });
+    }).catch((error: unknown) => { if (active) reportStartupError(error, "Unable to load presets"); });
     return () => { active = false; };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, connectionRevision, reportStartupError]);
 
   useEffect(() => {
     let active = true;
@@ -185,11 +197,9 @@ export function GridVisualization() {
       : fetchGrid(apiBaseUrl, condition);
     request.then((result) => {
       if (active) dispatch({ type: "baseline", result, condition });
-    }).catch((error: unknown) => {
-      if (active) setErrorMessage(error instanceof Error ? error.message : "Unable to load scenario");
-    });
+    }).catch((error: unknown) => { if (active) reportStartupError(error, "Unable to load scenario"); });
     return () => { active = false; };
-  }, [apiBaseUrl, loadMultiplier, generationMultiplier, lineRatingMultiplier, dispatchProfile, analysisDefinition]);
+  }, [apiBaseUrl, loadMultiplier, generationMultiplier, lineRatingMultiplier, dispatchProfile, analysisDefinition, connectionRevision, reportStartupError]);
 
   useEffect(() => {
     if (!isPlaying || !cascadeResult) return;
@@ -207,6 +217,13 @@ export function GridVisualization() {
     setCurrentStepIndex(0);
     setIsPlaying(false);
     setErrorMessage(null);
+  }, []);
+
+  const retryBackend = useCallback(() => {
+    startupDeadlineRef.current = Date.now() + 75_000;
+    setApiStatus("checking");
+    setErrorMessage(null);
+    setConnectionRevision((revision) => revision + 1);
   }, []);
 
   const selectComponent = useCallback((component: ScenarioInput["component"]) => {
@@ -516,7 +533,7 @@ export function GridVisualization() {
       <Link className="brand" href="/" aria-label="Tripwire home"><Network aria-hidden="true" /><div><h1>TRIPWIRE</h1><p>Grid Cascade Intelligence</p></div></Link>
       <div className="header-scenario"><span className="eyebrow">Scenario</span><span>{editMode ? "Editing draft" : activeGridPresetId ? userPresets.find((item) => item.id === activeGridPresetId)?.name ?? scenarioName : scenarioName}{editorDirty ? " *" : ""}</span></div>
       <div className="header-status" aria-live="polite"><span className="eyebrow">System</span><StatusBadge status={system} /></div>
-      <div className="api-status" role="status">{apiStatus === "connected" ? <CircleCheck size={14} aria-hidden="true" /> : apiStatus === "checking" ? <LoaderCircle size={14} aria-hidden="true" /> : <CircleX size={14} aria-hidden="true" />}<span>API {apiStatus}</span></div>
+      <div className="api-status" role="status">{apiStatus === "connected" ? <CircleCheck size={14} aria-hidden="true" /> : apiStatus === "checking" || apiStatus === "starting" ? <LoaderCircle size={14} className="loading-icon" aria-hidden="true" /> : <CircleX size={14} aria-hidden="true" />}<span>{apiStatus === "starting" ? "Backend starting" : `API ${apiStatus}`}</span></div>
       <ActionButton icon={<RotateCcw />} disabled={activeAction !== null} onClick={handleResetScenario} variant="ghost" title="Reset profile, selection, and results">Reset</ActionButton>
     </header>
     <main className="workspace">
@@ -533,9 +550,9 @@ export function GridVisualization() {
         <section className="network-frame" aria-label="Power network">
           <header className="network-header"><div><h2>Power Network</h2><p className="muted">{grid ? `${grid.nodes.filter((node) => node.type === "bus").length} buses / ${grid.lines.length} transmission lines` : "Transmission network"}<span className="view-label">{editMode ? "Draft topology" : scenario.view === "mitigated" ? "Mitigated replay" : scenario.view === "original" ? "Original cascade" : scenario.view === "failure" ? "Single failure" : "Pre-failure"}</span></p></div><NetworkTools disabled={!grid || editMode} locked={layoutLocked} onAutoLayout={handleAutoLayout} onResetLayout={handleResetLayout} onToggleLock={() => setLayoutLocked((locked) => !locked)} displayOptions={displayOptions} onDisplayOptionChange={handleDisplayOptionChange} onEditGrid={enterEditMode} /></header>
           {editorDirty && !editMode && <div className="modified-banner" role="status">Grid modified — rerun analysis.</div>}
-          {errorMessage && <div className="error-banner" role="alert">{errorMessage}<button className="button button-ghost icon-button" onClick={() => configureScenario({ ...scenario.input })} title="Retry loading the scenario" aria-label="Retry loading the scenario"><RotateCcw /></button></div>}
+          {errorMessage && <div className="error-banner" role="alert">{errorMessage}<button className="button button-ghost icon-button" onClick={retryBackend} title="Retry backend connection" aria-label="Retry backend connection"><RotateCcw /></button></div>}
           <div className="network-canvas">
-            {!grid ? <div className="state-message" role="status">{isLoading ? <LoaderCircle size={24} className="loading-icon" aria-hidden="true" /> : <CircleX size={24} aria-hidden="true" />}<h3>{isLoading ? "Loading network" : "Network unavailable"}</h3></div> :
+            {!grid ? <div className="state-message" role="status">{isLoading ? <LoaderCircle size={24} className="loading-icon" aria-hidden="true" /> : <CircleX size={24} aria-hidden="true" />}<h3>{apiStatus === "checking" || apiStatus === "starting" ? "Starting simulation backend..." : isLoading ? "Loading network" : "Network unavailable"}</h3><button type="button" className="button button-secondary" onClick={retryBackend}>Retry connection</button></div> :
               <GridDisplayProvider value={displayOptions}><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: .12 }} minZoom={.2} maxZoom={1.8}
                 nodesConnectable={false} nodesDraggable={editMode || !layoutLocked} snapToGrid snapGrid={[15, 15]} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
                 onNodeDragStop={(_, node) => handleNodeDragStop(node as GridNode)}
