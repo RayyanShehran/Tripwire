@@ -7,6 +7,40 @@ Tripwire is deployed with a Vercel frontend and a Render FastAPI backend:
 
 The Render service uses the free plan and can take 50 seconds or more to wake after inactivity.
 
+## Verified Production State
+
+Production was verified on September 19, 2026 using application commit
+`4b43cf822724621af223da8f7e4817e6a04eb5f6`.
+
+- Render deploy: `dep-dan7uvbm8hqs73acgqrg`
+- Deploy result: succeeded and live
+- Deploy duration: 1 minute 40 seconds
+- Python: 3.12.11
+- Git branch: `main`
+- Render root directory: `backend`
+- Auto-deploy: On Commit
+
+The production OpenAPI schema includes all expected routes:
+
+```text
+/health
+/ready
+/api/grid
+/api/grid/definition
+/api/grid/validate
+/api/grid/solve
+/api/failure
+/api/cascade
+/api/predict
+/api/recommend
+/api/reset
+```
+
+The live Grid Builder was verified through Vercel against the Render API. The
+check covered component creation, validation, custom solve, layout movement,
+browser-local save/reload, single failure, cascade, mitigation, and the truthful
+ML incompatibility response for modified topology.
+
 ## Frontend: Vercel
 
 Deploy the `frontend/` directory as the Vercel project root.
@@ -155,6 +189,30 @@ After the frontend is deployed, update the backend CORS variable with the exact 
 - Backend starts locally but not hosted: confirm the platform supplies `$PORT` and the start command uses it.
 - Recommendations feel slow: mitigation evaluates six deterministic simulator candidates by default and is expected to be slower than grid, prediction, or cascade requests.
 - The first request takes up to a minute: the Render free instance is waking from inactivity.
+
+## Cold Start Behavior
+
+Render's free service sleep is the main source of presentation-time cold starts
+and can add 50 seconds or more before the application is reachable. This is
+separate from Tripwire's own startup work.
+
+The verified deployment logs showed these application startup phases:
+
+```text
+Container allocation before command: about 19 seconds
+Python imports before Uvicorn process start: about 30 seconds
+Tripwire startup validation: about 2 seconds
+Render health routing before live status: about 10 seconds
+```
+
+The Python import phase includes pandapower, SciPy, pandas, and the saved ML
+artifacts. Startup validation itself is not the dominant delay. Removing free-tier
+sleep requires a continuously running paid instance; it cannot be solved only by
+changing application code.
+
+During the 75-second warm-up window, the frontend displays **Starting simulation
+backend...** and provides **Retry connection**. It reports the backend as
+unavailable only after that warm-up window expires.
 
 ## Pre-Deployment Checks
 

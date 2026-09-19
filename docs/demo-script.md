@@ -1,5 +1,17 @@
 # Tripwire Demo Script
 
+## Before The Presentation
+
+1. Open https://tripwire-api-4ecd.onrender.com/health.
+2. If the Render instance is sleeping, wait for `{"status":"ok"}`.
+3. Open https://tripwire-api-4ecd.onrender.com/ready and confirm both checks are `ok`.
+4. Open https://tripwire-eta.vercel.app and confirm **API connected** appears.
+5. Begin the presentation only after the solved eight-bus network is visible.
+
+The free Render instance can take 50 seconds or more to wake. Tripwire now shows
+**Starting simulation backend...** with a retry control during this period, but
+waking the service before the presentation remains the most reliable demo flow.
+
 ## 0:00-0:30 - Problem
 
 Tripwire demonstrates how a single transmission-grid outage can propagate into broader cascading failures. The project is a university decision-support prototype, not an operational control tool.
@@ -27,3 +39,7 @@ Open the methodology/help section in the side panel or reference the README. Sum
 ## Backup Flow
 
 If the severe preset takes too long to recommend mitigation live, show the already completed cascade summary first, then run **Find Mitigation** while explaining the candidate search. The recommendation endpoint is the slowest demo operation because it runs multiple simulations.
+
+If the API is still waking, open `/health` in another tab and wait for the JSON
+response, then use **Retry connection** in Tripwire. Do not start the scenario
+demonstration while the header still says **Backend starting**.
