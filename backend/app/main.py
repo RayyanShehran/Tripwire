@@ -10,12 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.config import get_settings, validate_settings
-from app.ml.inference import (
-    ModelNotTrainedError,
-    PredictionInputError,
-    load_model_bundle,
-    predict_from_config,
-)
+from app.ml.artifacts import ModelNotTrainedError, validate_model_artifacts
 from app.simulation.config import ScenarioConfig, scenario_config, build_scenario_network
 from app.simulation.definition import (
     BUILTIN_GRID_DEFINITION,
@@ -51,7 +46,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.data_path,
     )
     get_baseline_grid()
-    load_model_bundle(settings.model_path)
+    validate_model_artifacts(settings.model_path)
     logger.info("Tripwire API startup validation complete")
     yield
 
@@ -137,7 +132,7 @@ def ready() -> dict:
         raise HTTPException(status_code=503, detail={"status": "failed", "checks": checks}) from exc
 
     try:
-        load_model_bundle(settings.model_path)
+        validate_model_artifacts(settings.model_path)
         checks["models"] = "ok"
     except ModelNotTrainedError as exc:
         checks["models"] = "missing"
@@ -276,7 +271,12 @@ def predict_risk(request: PredictionRequest) -> dict:
     config = _scenario_config_from_request(request)
     try:
         if request.grid_definition is not None and not _is_builtin_grid(request.grid_definition):
-            raise PredictionInputError("Current prediction model was trained on the built-in Tripwire network and is unavailable for modified topology")
+            raise HTTPException(
+                status_code=422,
+                detail="Current prediction model was trained on the built-in Tripwire network and is unavailable for modified topology",
+            )
+        from app.ml.inference import predict_from_config
+
         return predict_from_config(
             config,
             model_dir=settings.model_path,
@@ -285,7 +285,7 @@ def predict_risk(request: PredictionRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (ModelNotTrainedError, GridConvergenceError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except (PredictionInputError, KeyError, ValueError) as exc:
+    except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
         logger.info("prediction completed elapsed_ms=%.2f", _elapsed_ms(start))

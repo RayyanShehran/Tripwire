@@ -9,6 +9,7 @@ from typing import Any
 import joblib
 import pandas as pd
 
+from app.ml.artifacts import MODEL_DIR, ModelNotTrainedError, validate_model_artifacts
 from app.ml.features import feature_frame_from_config, validate_feature_payload
 from app.ml.schemas import (
     MODEL_VERSION,
@@ -17,7 +18,6 @@ from app.ml.schemas import (
     PredictionResult,
     risk_level,
 )
-from app.ml.train import CLASSIFIER_ARTIFACT, METADATA_ARTIFACT, MODEL_DIR, REGRESSOR_ARTIFACT
 from app.simulation.grid import GridComponentType
 from app.simulation.config import (
     ScenarioConfig,
@@ -27,31 +27,13 @@ from app.simulation.config import (
 )
 
 
-class ModelNotTrainedError(RuntimeError):
-    pass
-
-
 class PredictionInputError(ValueError):
     pass
 
 
 @lru_cache(maxsize=1)
 def load_model_bundle(model_dir: str | Path = MODEL_DIR) -> ModelBundle:
-    model_dir = Path(model_dir)
-    classifier_path = model_dir / CLASSIFIER_ARTIFACT
-    regressor_path = model_dir / REGRESSOR_ARTIFACT
-    metadata_path = model_dir / METADATA_ARTIFACT
-
-    missing = [
-        str(path)
-        for path in (classifier_path, regressor_path, metadata_path)
-        if not path.exists()
-    ]
-    if missing:
-        raise ModelNotTrainedError(
-            "Model artifacts are missing. Run backend/scripts/train_models.py first. "
-            f"Missing: {missing}"
-        )
+    classifier_path, regressor_path, metadata_path = validate_model_artifacts(model_dir)
 
     return {
         "classifier": joblib.load(classifier_path),

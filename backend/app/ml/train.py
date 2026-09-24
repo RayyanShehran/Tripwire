@@ -36,6 +36,12 @@ from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from app.ml.artifacts import (
+    CLASSIFIER_ARTIFACT,
+    METADATA_ARTIFACT,
+    MODEL_DIR,
+    REGRESSOR_ARTIFACT,
+)
 from app.ml.dataset import DATASET_SCHEMA_VERSION, default_output_path, validate_dataset
 from app.ml.features import (
     CATEGORICAL_FEATURES,
@@ -49,12 +55,6 @@ from app.ml.schemas import (
     RANDOM_SEED,
     REGRESSION_TARGET,
 )
-
-MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
-CLASSIFIER_ARTIFACT = "cascade_classifier.joblib"
-REGRESSOR_ARTIFACT = "load_loss_regressor.joblib"
-METADATA_ARTIFACT = "model_metadata.json"
-
 
 @dataclass(frozen=True)
 class SplitData:
