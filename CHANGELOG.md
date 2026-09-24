@@ -4,7 +4,11 @@ All notable changes to Tripwire are documented here.
 
 ## [Unreleased]
 
-No changes beyond the frozen demo release are currently planned in this branch.
+### Changed
+
+- Deferred scikit-learn imports and model deserialization until the first risk
+  prediction, reducing measured local API-ready time from roughly 15 seconds to
+  6-9 seconds while retaining lightweight startup and readiness artifact checks.
 
 ## [1.0.0-demo] - Proposed 2026-09-19
 
@@ -22,7 +26,7 @@ No changes beyond the frozen demo release are currently planned in this branch.
 
 ### Verified
 
-- 110 backend tests, 27 frontend unit tests, and 15 browser tests pass.
+- 113 backend tests, 27 frontend unit tests, and 15 browser tests pass.
 - Frontend lint and optimized production build pass.
 - Deployed API, grid editing, custom analysis, prediction, cascade, replay,
   mitigation comparison, reset, import/export, and local scenario persistence pass.

@@ -311,7 +311,9 @@ Readiness check:
 curl http://127.0.0.1:8000/ready
 ```
 
-Readiness verifies that the simulator initializes and model artifacts can load.
+Readiness verifies that the simulator initializes and all required model artifact
+files are present. The scikit-learn inference module and saved pipelines load
+lazily on the first `POST /api/predict` request, then remain cached.
 
 Grid check:
 

@@ -101,7 +101,7 @@ validated on real utility data.
 
 | Check | Result |
 | --- | --- |
-| Backend pytest | 110 passed |
+| Backend pytest | 113 passed |
 | Frontend unit tests | 27 passed |
 | Frontend lint | Passed |
 | Next.js production build and type check | Passed |

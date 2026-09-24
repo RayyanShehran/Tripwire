@@ -18,7 +18,7 @@ visual replay, baseline ML risk estimates, and simulation-tested mitigation.
 
 ## Evidence
 
-The release audit passed 110 backend tests, 27 frontend unit tests, 15 Playwright
+The release audit passed 113 backend tests, 27 frontend unit tests, 15 Playwright
 tests, frontend lint, the optimized Next.js build, and a deployed production smoke
 workflow. The evidence set contains 12 screenshots at 1440 x 900. Exact measured
 simulation, dataset, and model results are in `docs/final-results.md`.

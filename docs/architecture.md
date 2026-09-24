@@ -165,7 +165,10 @@ POST /api/predict
 POST /api/recommend
 ```
 
-`GET /ready` checks that the simulator can initialize and saved ML artifacts can load. It is intended for runtime readiness checks, not deep simulation benchmarking.
+`GET /ready` checks that the simulator can initialize and all saved ML artifact
+files are present. It deliberately does not deserialize the models. The inference
+module and pipelines load lazily on the first prediction request and remain cached
+for later predictions.
 
 Endpoint lifecycle rules:
 

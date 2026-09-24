@@ -121,7 +121,10 @@ backend/models/load_loss_regressor.joblib
 backend/models/model_metadata.json
 ```
 
-They are committed because the deployed API must serve predictions without retraining on startup. Startup validation loads the model bundle once and fails clearly if artifacts are missing.
+They are committed because the deployed API must serve predictions without
+retraining. Startup validation checks that all three artifacts exist without
+importing scikit-learn or deserializing the pipelines. The first prediction loads
+the bundle once; later predictions reuse the in-process cache.
 
 To recreate artifacts locally:
 
@@ -148,7 +151,7 @@ GET /ready
 The readiness endpoint verifies:
 
 - simulator initialization
-- model artifact loading
+- required model artifact presence
 - application readiness
 
 Expected response:
@@ -205,10 +208,12 @@ Tripwire startup validation: about 2 seconds
 Render health routing before live status: about 10 seconds
 ```
 
-The Python import phase includes pandapower, SciPy, pandas, and the saved ML
-artifacts. Startup validation itself is not the dominant delay. Removing free-tier
-sleep requires a continuously running paid instance; it cannot be solved only by
-changing application code.
+The backend now defers its ML inference imports and model deserialization until
+the first prediction. A three-run local cold-process benchmark reduced API-ready
+time from roughly 15 seconds to 6-9 seconds. Artifact presence checks took about
+2 ms; the first prediction paid a one-time 2.1-2.4 second model initialization
+cost. Render container allocation and free-tier wake-up still dominate the public
+cold start. Removing free-tier sleep requires a continuously running paid instance.
 
 During the 75-second warm-up window, the frontend displays **Starting simulation
 backend...** and provides **Retry connection**. It reports the backend as
